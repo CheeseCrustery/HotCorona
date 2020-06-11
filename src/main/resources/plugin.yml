@@ -1,0 +1,4 @@
+name: Corona
+version: ${project.version}
+main: io.github.cheesecrustery.corona.Corona
+api-version: 1.13
