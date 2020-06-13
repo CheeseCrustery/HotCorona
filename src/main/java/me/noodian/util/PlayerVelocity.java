@@ -1,37 +1,33 @@
 package me.noodian.util;
 
+import me.noodian.corona.time.Ticking;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
 import java.util.HashMap;
 
-public class PlayerVelocity extends BukkitRunnable {
+public class PlayerVelocity implements Ticking {
 
-	private static PlayerVelocity m_Instance;
+	private final HashMap<Player, Pair<Vector>> playerPositions;
 
-	private HashMap<Player, Pair<Vector>> m_PlayerPositions;
-
-	private PlayerVelocity() {
-		m_PlayerPositions = new HashMap<Player, Pair<Vector>>();
+	public PlayerVelocity() {
+		playerPositions = new HashMap<>();
 	}
 
-	public static PlayerVelocity GetInstance() {
-		if (m_Instance == null) m_Instance = new PlayerVelocity();
-		return m_Instance;
+	// Get the current velocity of a player
+	public Vector getVelocity(Player player) {
+		return playerPositions.get(player).x.clone().subtract(playerPositions.get(player).y);
 	}
 
-	public Vector GetVelocity(Player player) {
-		return m_PlayerPositions.get(player).X.clone().subtract(m_PlayerPositions.get(player).Y);
-	}
-
+	@SuppressWarnings("SuspiciousNameCombination")
 	@Override
-	public void run() {
+	// Update all player positions
+	public void tick() {
 		for (Player player : Bukkit.getOnlinePlayers()) {
-			if (m_PlayerPositions.get(player) == null) m_PlayerPositions.put(player, new Pair<Vector>());
-			m_PlayerPositions.get(player).Y = m_PlayerPositions.get(player).X;
-			m_PlayerPositions.get(player).X = player.getLocation().toVector();
+			if (playerPositions.get(player) == null) playerPositions.put(player, new Pair<>());
+			playerPositions.get(player).y = playerPositions.get(player).x;
+			playerPositions.get(player).x = player.getLocation().toVector();
 		}
 	}
 }

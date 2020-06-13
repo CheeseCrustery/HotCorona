@@ -3,6 +3,7 @@ package me.noodian.corona.player;
 import io.netty.channel.*;
 
 import org.bukkit.Bukkit;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 
@@ -58,9 +59,9 @@ class PlayerPacketHandler extends ChannelDuplexHandler {
 				Field f_uuid = cm_PacketPlayOutSpawnEntity.getDeclaredField("b");
 				f_uuid.setAccessible(true);
 				UUID uuid = (UUID) f_uuid.get(packet);
-				EntityType type = Bukkit.getServer().getEntity(uuid).getType();
+				Entity entity = Bukkit.getServer().getEntity(uuid);
 
-				if (type == EntityType.SNOWBALL) return;
+				if (entity != null && entity.getType() == EntityType.SNOWBALL) return;
 			}
 
 			super.write(context, packet, channelPromise);

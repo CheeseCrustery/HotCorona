@@ -1,13 +1,14 @@
 package me.noodian.util;
 
 public class Pair<T> {
-	public T X;
-	public T Y;
+	public T x;
+	public T y;
 
 	public Pair() {	}
 
+	@SuppressWarnings("unused")
 	public Pair(T x, T y) {
-		X = x;
-		Y = y;
+		this.x = x;
+		this.y = y;
 	}
 }

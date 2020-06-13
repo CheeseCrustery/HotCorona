@@ -1,16 +1,16 @@
 package me.noodian.corona.player;
 
 import me.noodian.corona.Corona;
-import me.noodian.corona.Ticking;
-import me.noodian.corona.UpdateManager;
+import me.noodian.corona.time.Ticking;
+import me.noodian.corona.time.Timer;
+import me.noodian.corona.time.TimerCallback;
+import me.noodian.corona.ui.HpDisplay;
+import me.noodian.corona.ui.XpDisplay;
 import me.noodian.util.NameEncoder;
-import me.noodian.util.countdown.BarType;
 import org.bukkit.*;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import me.noodian.util.countdown.CountdownCallback;
-import me.noodian.util.countdown.Countdown;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 
@@ -18,52 +18,34 @@ import java.util.Arrays;
 import java.util.Random;
 
 
-class PlayerHandler implements CountdownCallback, Ticking {
+public class PlayerHandler implements Ticking {
 
-	private static final int COUGH_ID = 0, SNEEZE_ID = 1;
+	public static final int COUGH_ID = 0, SNEEZE_ID = 1;
 
 	final PlayerPacketHandler packetHandler;
 
 	private final Player player;
-	private final PlayerManager manager;
+	private final PlayerList manager;
 	private PlayerState state;
-	private Countdown hpCountdown;
-	private Countdown[] cooldowns;
+	private final HpDisplay hpDisplay;
+	private final XpDisplay xpDisplay;
+	private final Timer[] cooldowns;
+	private Timer deathTimer, infectionTimer, startTimer;
 
-	PlayerHandler(Player player, PlayerState state, PlayerManager manager) {
+	PlayerHandler(Player player, PlayerState state, PlayerList manager) {
 		this.player = player;
 		this.state = state;
 		this.manager = manager;
-		this.cooldowns = new Countdown[2];
+		this.cooldowns = new Timer[2];
 		this.packetHandler = new PlayerPacketHandler(player);
 
-		UpdateManager.GetInstance().Objects.add(this);
-	}
-
-	@Override
-	// When timer finishes, reset cooldown / get infected / die
-	public void Finished(Countdown countdown) {
-
-		// Infected -> Dead
-		if (hpCountdown == countdown)
-			setState(PlayerState.DEAD);
-
-		// Incubating -> Infected
-		else if (xpCountdown == countdown)
-			setState(PlayerState.INFECTED);
-
-		// Cough cooldown finished
-		else if (cooldowns[COUGH_ID] == countdown)
-			giveCough();
-
-		// Sneeze cooldown finished
-		else if (cooldowns[SNEEZE_ID] == countdown)
-			giveSneeze();
+		this.hpDisplay = new HpDisplay(this);
+		this.xpDisplay = new XpDisplay(this);
 	}
 
 	@Override
 	// If infected, play sounds and particles
-	public void Tick() {
+	public void tick() {
 
 		// Play effects when infected
 		if (state == PlayerState.INFECTED) {
@@ -77,29 +59,73 @@ class PlayerHandler implements CountdownCallback, Ticking {
 			}
 		}
 
-		// Update hp countdown
-		if (hpCountdown != null)
-			hpCountdown.tick();
-
-		// Update countdown, override with cooldown
+		// Update which XP countdown to display
 		int held = player.getInventory().getHeldItemSlot();
-		if (xpCountdown != null)
-			xpCountdown.tick();
-		for (int i = 0; i < cooldowns.length; i++) {
-			if (i == held)
-				cooldowns[i].tick();
-			else
-				cooldowns[i].tick(false);
+		if (held < cooldowns.length && cooldowns[held] != null)
+			xpDisplay.subscribeTo(cooldowns[held]);
+		else if (infectionTimer != null)
+			xpDisplay.subscribeTo(infectionTimer);
+		else
+			xpDisplay.subscribeTo(startTimer);
+	}
+
+	// When hp has ticked down, die
+	public final TimerCallback deathCallback = args -> setState(PlayerState.DEAD);
+
+	// When xp has ticked down, get infected and heal infector
+	public final TimerCallback infectionCallback = args -> {
+		if (setState(PlayerState.INFECTED)) {
+			if (args.length == 1 && args[0] instanceof PlayerHandler) {
+				((PlayerHandler) args[0]).setState(PlayerState.HEALTHY);
+			}
+		}
+	};
+
+	// When cooldown has finished, give back the cough
+	public final TimerCallback cooldownCallback = args -> {
+		if (state == PlayerState.INFECTED && args.length == 1 && args[0] instanceof Integer) {
+			switch ((int)args[0]) {
+				case COUGH_ID:
+					giveCough();
+					break;
+				case SNEEZE_ID:
+					giveSneeze();
+			}
+		}
+	};
+
+	// Return the player object
+	public Player getPlayer() {
+		return player;
+	}
+
+	// Set off timer to infect self and heal other
+	public void getInfectedBy(PlayerHandler other) {
+		if (setState(PlayerState.INCUBATING))
+			this.infectionTimer = new Timer(5*20, infectionCallback, new Object[]{other});
+	}
+
+	// Cough / Sneeze
+	public void usedItem(int itemId) {
+
+		switch (itemId) {
+			case COUGH_ID:
+				player.getInventory().clear(COUGH_ID);
+				cooldowns[COUGH_ID] = new Timer(5*20, this.cooldownCallback, new Object[]{COUGH_ID});
+				break;
+			case SNEEZE_ID:
+				player.getInventory().clear(SNEEZE_ID);
+				cooldowns[SNEEZE_ID] = new Timer(10*20, this.cooldownCallback, new Object[]{SNEEZE_ID});
 		}
 	}
 
-	// Get the player's state
-	PlayerState getState() {
-		return state;
+	// Set the start timer
+	public void setStartTimer(Timer startTimer) {
+		this.startTimer = startTimer;
 	}
 
 	// Change the state of the player. Returns true if successful.
-	boolean setState(PlayerState state) {
+	public boolean setState(PlayerState state) {
 
 		if (this.state == PlayerState.DEAD || this.state == state) return false;
 
@@ -114,7 +140,7 @@ class PlayerHandler implements CountdownCallback, Ticking {
 				if (this.state == PlayerState.INFECTED) return false;
 
 				// Show title
-				Corona.GetInstance().ServerChat.sendTitle("infected", player);
+				Corona.getInstance().chat.sendTitle("infected", player);
 
 				// Clear inventory
 				player.getInventory().clear();
@@ -124,10 +150,7 @@ class PlayerHandler implements CountdownCallback, Ticking {
 				PotionEffect blindness = new PotionEffect(PotionEffectType.BLINDNESS, 5,  1);
 				PotionEffect slowness = new PotionEffect(PotionEffectType.SLOW, 5, 1);
 				player.addPotionEffects(Arrays.asList(sickness, blindness, slowness));
-				Bukkit.getServer().getWorld("world").playSound(player.getEyeLocation(), Sound.ENTITY_WITHER_SPAWN, 1.0f, 1.0f);
-
-				// Run countdown to infection
-				xpCountdown = new Countdown(5, this, this.player, BarType.XP);
+				Corona.getInstance().world.playSound(player.getEyeLocation(), Sound.ENTITY_WITHER_SPAWN, 1.0f, 1.0f);
 
 				break;
 			case INFECTED:
@@ -139,8 +162,9 @@ class PlayerHandler implements CountdownCallback, Ticking {
 				player.getInventory().setHelmet(new ItemStack(Material.SLIME_BLOCK));
 
 				// Run countdown to death
-				int time = 25 - Corona.GetInstance().GetGameDuration() / 5;
-				hpCountdown = new Countdown(time, this, this.player, BarType.HEALTH);
+				int ticks = 25 - (Corona.getInstance().getGameDuration()*20) / 5;
+				deathTimer = new Timer(ticks, deathCallback);
+				hpDisplay.subscribeTo(deathTimer);
 
 				// Add items
 				giveCough();
@@ -152,7 +176,7 @@ class PlayerHandler implements CountdownCallback, Ticking {
 				clearEverything();
 
 				// Play sound
-				Bukkit.getServer().getWorld("world").playSound(player.getEyeLocation(), Sound.ENTITY_DRAGON_FIREBALL_EXPLODE, 1.0f, 1.0f);
+				Corona.getInstance().world.playSound(player.getEyeLocation(), Sound.ENTITY_DRAGON_FIREBALL_EXPLODE, 1.0f, 1.0f);
 
 				// Allow flying
 				player.setAllowFlight(true);
@@ -160,43 +184,46 @@ class PlayerHandler implements CountdownCallback, Ticking {
 				// Set self invisible to alive
 				PlayerState[] livingStates = {PlayerState.HEALTHY, PlayerState.INCUBATING, PlayerState.INFECTED};
 				for (Player alive : manager.getPlayers(livingStates)) {
-					alive.hidePlayer(Corona.GetInstance(), player);
+					alive.hidePlayer(Corona.getInstance(), player);
 				}
 
 				// Set dead visible to self
 				for (Player dead : manager.getPlayers(PlayerState.DEAD)) {
-					dead.hidePlayer(Corona.GetInstance(), player);
+					dead.hidePlayer(Corona.getInstance(), player);
 				}
 		}
 
+		manager.stateChange(this, this.state, state);
 		this.state = state;
 		return true;
 	}
 
-	// Change the countdown instance
-	void setXpCountdown(Countdown countdown) {
-		xpCountdown = countdown;
-	}
-
-	// Cough / Sneeze
-	void usedItem(int itemId) {
-
-		switch (itemId) {
-			case COUGH_ID:
-				player.getInventory().clear(COUGH_ID);
-				cooldowns[COUGH_ID] = new Countdown(5, this, player, BarType.XP);
-				break;
-			case SNEEZE_ID:
-				player.getInventory().clear(SNEEZE_ID);
-				cooldowns[SNEEZE_ID] = new Countdown(10, this, player, BarType.XP);
-		}
+	// Return the state
+	PlayerState getState() {
+		return state;
 	}
 
 	// Clear player countdown, inventory, and effects
 	private void clearEverything() {
-		hpCountdown = null;
-		xpCountdown = null;
-		cooldowns = new Countdown[2];
+
+		if (deathTimer != null) {
+			deathTimer.remove();
+			deathTimer = null;
+		}
+
+		if (infectionTimer != null) {
+			infectionTimer.remove();
+			infectionTimer = null;
+		}
+
+		startTimer = null;
+
+		for (int i = 0; i < cooldowns.length; i++) {
+			if (cooldowns[i] != null) {
+				cooldowns[i].remove();
+				cooldowns[i] = null;
+			}
+		}
 		player.getInventory().clear();
 		for (PotionEffect effect : player.getActivePotionEffects())
 			player.removePotionEffect(effect.getType());
@@ -207,7 +234,7 @@ class PlayerHandler implements CountdownCallback, Ticking {
 		ItemStack cough = new ItemStack(Material.SLIME_BLOCK);
 		ItemMeta meta = cough.getItemMeta();
 		if (meta != null) {
-			meta.setDisplayName(Corona.GetInstance().Config.getString("item.cough") + NameEncoder.Encode(COUGH_ID));
+			meta.setDisplayName(Corona.getInstance().config.getString("item.cough") + NameEncoder.encode(COUGH_ID));
 			cough.setItemMeta(meta);
 		}
 		player.getInventory().setItem(COUGH_ID, cough);
@@ -218,7 +245,7 @@ class PlayerHandler implements CountdownCallback, Ticking {
 		ItemStack sneeze = new ItemStack(Material.SLIME_BALL);
 		ItemMeta meta = sneeze.getItemMeta();
 		if (meta != null) {
-			meta.setDisplayName(Corona.GetInstance().Config.getString("item.sneeze") + NameEncoder.Encode(SNEEZE_ID));
+			meta.setDisplayName(Corona.getInstance().config.getString("item.sneeze") + NameEncoder.encode(SNEEZE_ID));
 			sneeze.setItemMeta(meta);
 		}
 		player.getInventory().setItem(SNEEZE_ID, sneeze);

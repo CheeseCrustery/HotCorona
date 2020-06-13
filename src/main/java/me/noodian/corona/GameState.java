@@ -1,6 +1,6 @@
 package me.noodian.corona;
 
-public enum GameState {
+enum GameState {
 	STARTING,
 	INGAME,
 	END,

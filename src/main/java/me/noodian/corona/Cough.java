@@ -1,53 +1,54 @@
 package me.noodian.corona;
 
+import me.noodian.corona.player.PlayerHandler;
+import me.noodian.corona.time.Ticking;
 import org.bukkit.Bukkit;
 import org.bukkit.Particle;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
-import me.noodian.util.PlayerVelocity;
 
 import java.util.Collection;
 import java.util.Random;
-import java.util.function.Predicate;
 
 public class Cough implements Ticking {
 
-	private static final double ms_Speed = 0.5;
-	private static final int ms_ParticleDensity = 20;
+	private static final double SPEED = 0.5;
+	private static final int PARTICLE_DENSITY = 20;
 
-	private final Vector m_BaseVelocity;
-	private final Player m_Player;
-	private final BoundingBox m_BoundingBox;
-	private long m_Lifetime;
-	private Vector m_Velocity;
+	private final Vector baseVelocity;
+	private final Player player;
+	private final BoundingBox boundingBox;
+	private long lifetime;
+	@SuppressWarnings({"FieldMayBeFinal", "CanBeFinal"})
+	private Vector velocity;
 
 	public Cough(Player player, double size, long lifetime) {
 
 		// Set player
-		m_Player = player;
+		this.player = player;
 
 		// Set lifetime
-		m_Lifetime = lifetime;
+		this.lifetime = lifetime;
 
 		// Make bounding box
 		double half = size/2;
 		Vector center = player.getEyeLocation().toVector();
 		center.add(player.getLocation().getDirection().multiply(half));
-		m_BoundingBox = new BoundingBox(
+		boundingBox = new BoundingBox(
 				center.getX()-half, center.getY()-half, center.getZ()-half,
 				center.getX()+half, center.getY()+half, center.getZ()+half
 		);
 
 		// Take base velocity of player
-		m_BaseVelocity = PlayerVelocity.GetInstance().GetVelocity(player).clone();
+		baseVelocity = Corona.getInstance().playerVelocity.getVelocity(player).clone();
 
 		// The cloud moves along the players viewing direction
-		m_Velocity = player.getLocation().getDirection().clone().normalize();
+		velocity = player.getLocation().getDirection().clone().normalize();
 	}
 
-	public void OnCollision(Object[] objects) {
+	public void onCollision(Object[] objects) {
 
 		// Get closest player
 		Player closest = null;
@@ -59,10 +60,10 @@ public class Cough implements Ticking {
 			Player player = (Player)object;
 
 			// Disregard self
-			if (player == m_Player) continue;
+			if (player == this.player) continue;
 
 			// Check distance
-			double dist = m_BoundingBox.getCenter().distanceSquared(player.getLocation().toVector());
+			double dist = boundingBox.getCenter().distanceSquared(player.getLocation().toVector());
 			if (dist < minDist) {
 				closest = player;
 				minDist = dist;
@@ -71,7 +72,9 @@ public class Cough implements Ticking {
 
 		// Infect closest player
 		if (closest != null) {
-			Corona.GetInstance().Players.infect(closest, m_Player);
+			PlayerHandler infected = Corona.getInstance().handlers.get(closest);
+			PlayerHandler infector = Corona.getInstance().handlers.get(player);
+			infected.getInfectedBy(infector);
 
 			System.out.println("COLLISION WITH " + closest.getName());
 			Bukkit.getServer().broadcastMessage("COLLISION WITH " + closest.getName());
@@ -79,39 +82,34 @@ public class Cough implements Ticking {
 	}
 
 	@Override
-	public void Tick() {
+	public void tick() {
 
 		// Check if still alive
-		if (--m_Lifetime <= 0) {
-			UpdateManager.GetInstance().Objects.remove(this);
+		if (--lifetime <= 0) {
+			Corona.getInstance().updateManager.remove(this);
 			return;
 		}
 
 		// Check for collision
-		Collection<Entity> entities = Bukkit.getServer().getWorld("world").getNearbyEntities(m_BoundingBox, new Predicate<Entity>() {
-			@Override
-			public boolean test(Entity entity) {
-				return entity instanceof Player;
-			}
-		});
-		if (entities.size() > 0) OnCollision(entities.toArray());
+		Collection<Entity> entities = Corona.getInstance().world.getNearbyEntities(boundingBox, entity -> entity instanceof Player);
+		if (entities.size() > 0) onCollision(entities.toArray());
 
 		// Move
-		m_BoundingBox.shift(m_BaseVelocity.add(m_Velocity.multiply(ms_Speed)));
+		boundingBox.shift(baseVelocity.add(velocity.multiply(SPEED)));
 
 		// Spawn particles
-		for (int i = 0; i < ms_ParticleDensity * m_BoundingBox.getVolume(); i++) {
-			Vector vec = RandomVector();
-			Bukkit.getServer().getWorld("world").spawnParticle(Particle.SLIME, vec.getX(), vec.getY(), vec.getZ(), 1);
+		for (int i = 0; i < PARTICLE_DENSITY * boundingBox.getVolume(); i++) {
+			Vector vec = randomVector();
+			Corona.getInstance().world.spawnParticle(Particle.SLIME, vec.getX(), vec.getY(), vec.getZ(), 1);
 		}
 	}
 
-	private Vector RandomVector() {
+	private Vector randomVector() {
 		Random random = new Random();
-		Vector out = m_BoundingBox.getMin().clone();
-		out.setX(out.getX() + (m_BoundingBox.getMaxX() - m_BoundingBox.getMinX()) * random.nextDouble());
-		out.setY(out.getY() + (m_BoundingBox.getMaxY() - m_BoundingBox.getMinY()) * random.nextDouble());
-		out.setZ(out.getZ() + (m_BoundingBox.getMaxZ() - m_BoundingBox.getMinZ()) * random.nextDouble());
+		Vector out = boundingBox.getMin().clone();
+		out.setX(out.getX() + (boundingBox.getMaxX() - boundingBox.getMinX()) * random.nextDouble());
+		out.setY(out.getY() + (boundingBox.getMaxY() - boundingBox.getMinY()) * random.nextDouble());
+		out.setZ(out.getZ() + (boundingBox.getMaxZ() - boundingBox.getMinZ()) * random.nextDouble());
 		return out;
 	}
 }
