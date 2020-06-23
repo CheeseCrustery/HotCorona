@@ -1,5 +1,6 @@
 package me.noodian.corona.ui;
 
+import me.noodian.corona.Corona;
 import me.noodian.corona.player.PlayerHandler;
 import org.bukkit.Bukkit;
 import org.bukkit.Sound;
@@ -38,12 +39,14 @@ public class HpDisplay extends UiDisplay {
 			}
 
 			// Damage player
-			else {
-				// MAY NOT ACTUALLY DAMAGE PLAYER, NEEDS TESTING
+			else if (owner.getPlayer().getHealth() > targetHp) {
+				owner.getPlayer().damage(owner.getPlayer().getHealth() - targetHp);
+				Corona.get().world.playSound(owner.getPlayer().getEyeLocation(), Sound.ENTITY_ZOMBIE_HURT, 1.0f, 1.0f);
+			}
+
+			// Heal player
+			else if (owner.getPlayer().getHealth() < targetHp) {
 				owner.getPlayer().setHealth(targetHp);
-				World world = Bukkit.getServer().getWorld("world");
-				if (world != null)
-					world.playSound(owner.getPlayer().getEyeLocation(), Sound.ENTITY_ZOMBIE_HURT, 1.0f, 1.0f);
 			}
 		}
 	}

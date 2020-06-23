@@ -1,73 +1,139 @@
 package me.noodian.corona.player;
 
 import io.netty.channel.*;
-
+import me.noodian.corona.Corona;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.UUID;
+import java.util.logging.Level;
+
 
 class PlayerPacketHandler extends ChannelDuplexHandler {
 
-	private final Player m_Player;
-	private Channel m_Channel;
-	private Class<?> cm_PacketPlayOutSpawnEntity;
+	private final static String NMS = "net.minecraft.server.", CRAFTBUKKIT = "org.bukkit.craftbukkit.";
+
+	private final Player player;
+	private Class<?>
+			PacketPlayOutSpawnEntity,
+			PacketPlayOutTitle,
+			CraftPlayer,
+			IChatBaseComponent,
+			EnumTitleAction,
+			ChatSerializer;
 
 	PlayerPacketHandler(Player player) {
 
 		// Set player
-		m_Player = player;
+		this.player = player;
 
 		// Get channel and packet using Reflection
 		try {
-			String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
 
-			// Get channel object
-			Class <?> c_craftPlayer = Class.forName("net.minecraft.server." + version + ".CraftPlayer");
-			Object handle = c_craftPlayer.getMethod("getHandle").invoke(player);
+			// Get classes
+			CraftPlayer = getClass("entity.CraftPlayer", CRAFTBUKKIT);
+			PacketPlayOutTitle = getClass("PacketPlayOutTitle", NMS);
+			PacketPlayOutSpawnEntity = getClass("PacketPlayOutSpawnEntity", NMS);
+			IChatBaseComponent = getClass("IChatBaseComponent", NMS);
+			EnumTitleAction = PacketPlayOutTitle.getDeclaredClasses()[0];
+			ChatSerializer = IChatBaseComponent.getDeclaredClasses()[0];
+
+			// Add self to netty pipeline
+			Object handle = CraftPlayer.getMethod("getHandle").invoke(player);
 			Object playerConnection = handle.getClass().getField("playerConnection").get(handle);
 			Object networkManager = playerConnection.getClass().getField("networkManager").get(playerConnection);
-			m_Channel = (Channel) networkManager.getClass().getField("channel").get(networkManager);
+			Channel channel = (Channel) networkManager.getClass().getField("channel").get(networkManager);
+			ChannelPipeline pipeline = channel.pipeline();
+			pipeline.addBefore("packet_handler", this.player.getName(), this);
 
-			// Get packet class
-			cm_PacketPlayOutSpawnEntity = Class.forName("net.minecraft.server." + version + ".PacketPlayOutSpawnEntity");
 		} catch (Exception e) {
 			e.printStackTrace();
+			Corona.get().getLogger().log(Level.SEVERE, e.getMessage());
 		}
-
-		// Add self to netty pipeline
-		ChannelPipeline pipeline = m_Channel.pipeline();
-		pipeline.addBefore("packet_handler", m_Player.getName(), this);
-	}
-
-	void Remove() {
-		m_Channel.eventLoop().submit(() -> {
-			m_Channel.pipeline().remove(m_Player.getName());
-			return null;
-		});
 	}
 
 	@Override
+	// Intercept packets everytime the server sends them out
 	public void write(ChannelHandlerContext context, Object packet, ChannelPromise channelPromise) {
 
 		try {
-			if (cm_PacketPlayOutSpawnEntity.isInstance(packet)) {
 
-				Field f_uuid = cm_PacketPlayOutSpawnEntity.getDeclaredField("b");
+			// Only intercept entity packets
+			if (PacketPlayOutSpawnEntity.isInstance(packet)) {
+
+				// Get entity
+				Field f_uuid = PacketPlayOutSpawnEntity.getDeclaredField("b");
 				f_uuid.setAccessible(true);
 				UUID uuid = (UUID) f_uuid.get(packet);
 				Entity entity = Bukkit.getServer().getEntity(uuid);
 
+				// Only intercept snowball entities
 				if (entity != null && entity.getType() == EntityType.SNOWBALL) return;
 			}
 
+			// Hand on packet
 			super.write(context, packet, channelPromise);
 		} catch (Exception e) {
-			System.out.println("[Corona] ERROR while trying to write outbound packet:");
-			System.out.println(e.toString());
+			e.printStackTrace();
+			Corona.get().getLogger().log(Level.SEVERE, e.getMessage());
 		}
+	}
+
+	// Send a title packet
+	void showTitle(String text) {
+		try {
+
+			// Make packet
+			Object titleEnum = EnumTitleAction.getField("TITLE").get(null);
+
+			Method chatComponentConstructor = ChatSerializer.getMethod("a", String.class);
+			Object chatComponent = chatComponentConstructor.invoke(null, "{\"text\":\"" + text +"\"}");
+
+			Class<?>[] packetConstructorArgs = {EnumTitleAction, IChatBaseComponent, int.class, int.class, int.class};
+			Constructor<?> packetConstructor = PacketPlayOutTitle.getConstructor(packetConstructorArgs);
+			Object packet = packetConstructor.newInstance(titleEnum, chatComponent, 20, 40, 20);
+
+			// Send packet
+			Object handle = player.getClass().getMethod("getHandle").invoke(player);
+			Object playerConnection = handle.getClass().getField("playerConnection").get(handle);
+			playerConnection.getClass().getMethod("sendPacket", getClass("Packet", NMS)).invoke(playerConnection, packet);
+		} catch (Exception e) {
+			e.printStackTrace();
+			Corona.get().getLogger().log(Level.SEVERE, e.getMessage());
+		}
+	}
+
+	// Remove this from the netty pipeline
+	void remove() {
+
+		// Get channel
+		Channel channel;
+		try {
+			Object handle = player.getClass().getMethod("getHandle").invoke(player);
+			Object playerConnection = handle.getClass().getField("playerConnection").get(handle);
+			Object networkManager = playerConnection.getClass().getField("networkManager").get(playerConnection);
+			channel = (Channel) networkManager.getClass().getField("channel").get(networkManager);
+		} catch (Exception e) {
+			e.printStackTrace();
+			Corona.get().getLogger().log(Level.SEVERE, e.getMessage());
+			return;
+		}
+
+		// Remove from event loop
+		channel.eventLoop().submit(() -> {
+			channel.pipeline().remove(player.getName());
+			return null;
+		});
+	}
+
+	// Get a class via reflection
+	private Class<?> getClass(String name, String prefix) throws ClassNotFoundException {
+		String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
+		return Class.forName(prefix + version + "." + name);
 	}
 }

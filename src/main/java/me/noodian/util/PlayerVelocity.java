@@ -7,12 +7,13 @@ import org.bukkit.util.Vector;
 
 import java.util.HashMap;
 
-public class PlayerVelocity implements Ticking {
+public class PlayerVelocity extends Ticking {
 
 	private final HashMap<Player, Pair<Vector>> playerPositions;
 
 	public PlayerVelocity() {
 		playerPositions = new HashMap<>();
+		start();
 	}
 
 	// Get the current velocity of a player
@@ -20,7 +21,6 @@ public class PlayerVelocity implements Ticking {
 		return playerPositions.get(player).x.clone().subtract(playerPositions.get(player).y);
 	}
 
-	@SuppressWarnings("SuspiciousNameCombination")
 	@Override
 	// Update all player positions
 	public void tick() {

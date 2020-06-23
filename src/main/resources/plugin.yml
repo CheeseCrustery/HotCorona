@@ -1,4 +1,4 @@
 name: Corona
 version: ${project.version}
-main: io.github.cheesecrustery.corona.Corona
+main: me.noodian.corona.Corona
 api-version: 1.13

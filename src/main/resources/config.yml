@@ -1,0 +1,23 @@
+scoreboard:
+  alive: "§o§aAlive:"
+  dead: "§o§7Dead:"
+  title: "§n§lCorona"
+  color:
+    alive: "a"
+    dead: "7"
+chat:
+  starting: "When you get infected, §2cough§r and §2sneeze§r on as many other players as you can to get healthy again!"
+title:
+  start: "It's §4Corona time§r!"
+  one-winner: "§f%name% survived!"
+  multiple-winners: "§fHumanity survived!"
+  infected: "§2You're infected!"
+  dead: "§2You died!"
+item:
+  cough: "§2Cough"
+  sneeze: "§2Sneeze"
+config:
+  initial-infection-length: 25
+  infection-length-drain: 0.2
+  timeout: 100
+  other-server: "lobby"

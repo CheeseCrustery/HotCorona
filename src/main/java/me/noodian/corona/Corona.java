@@ -1,44 +1,81 @@
 package me.noodian.corona;
 
-import me.noodian.corona.player.PlayerHandler;
-import me.noodian.corona.player.PlayerList;
-import me.noodian.corona.player.PlayerState;
-
+import com.google.common.io.ByteArrayDataOutput;
+import com.google.common.io.ByteStreams;
+import me.noodian.corona.player.*;
 import me.noodian.corona.time.*;
 import me.noodian.corona.time.Timer;
-import me.noodian.util.Chat;
-import me.noodian.util.NameEncoder;
-import me.noodian.util.PlayerVelocity;
+import me.noodian.util.*;
 import org.bukkit.*;
 import org.bukkit.FireworkEffect.Builder;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.*;
 import org.bukkit.event.*;
 import org.bukkit.event.block.Action;
-import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.ProjectileHitEvent;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
+import org.spigotmc.event.player.PlayerSpawnLocationEvent;
 
 import java.util.*;
+import java.util.logging.Level;
 
-public final class Corona extends JavaPlugin implements Listener, TimerCallback {
+public final class Corona extends JavaPlugin implements Listener {
 
 	private static Corona INSTANCE;
 
-	public World world;
-	public PlayerList handlers;
-	public Chat chat;
-	public FileConfiguration config;
-	public UpdateManager updateManager;
 	public PlayerVelocity playerVelocity;
+	public PlayerList handlers;
+	public Updater updater;
+	public World world;
+	public Text text;
+	public FileConfiguration config;
 
 	private GameState state;
-	private ArrayList<Player> winners;
+	private Player winner;
 	private long startTime;
 
+	// When start countdown has finished, start game
+	public final TimerCallback startCallback = args -> setState(GameState.INGAME);
+
+	// After game has ended, either reload or leave the server
+	public final TimerCallback endCallback = args -> {
+
+		// Reload
+		if (getServer().getOnlinePlayers().size() >= config.getInt("config.minplayers", 0)) {
+			setState(GameState.PAUSE);
+			setState(GameState.STARTING);
+		}
+
+		// Move players to other server
+		else {
+			Corona.get().getLogger().log(Level.INFO, "Not enough players to restart. Trying to move to other server...");
+			ByteArrayDataOutput out = ByteStreams.newDataOutput();
+			out.writeUTF("Connect");
+			out.writeUTF(config.getString("config.other-server"));
+			for (Player player : getServer().getOnlinePlayers()) {
+				player.sendPluginMessage(this, "BungeeCord", out.toByteArray());
+			}
+
+			// Test if moving worked
+			new BukkitRunnable() {
+				@Override
+				public void run() {
+					if (getServer().getOnlinePlayers().size() > 0) {
+						Corona.get().getLogger().log(Level.SEVERE, "Moving failed. Restarting game...");
+						setState(GameState.PAUSE);
+						setState(GameState.STARTING);
+					}
+				}
+			}.runTaskLater(this, config.getInt("config.timeout", 100));
+		}
+	};
+
 	// Get the singleton's instance
-	public static Corona getInstance() {
+	public static Corona get() {
 		return INSTANCE;
 	}
 
@@ -46,62 +83,87 @@ public final class Corona extends JavaPlugin implements Listener, TimerCallback 
 	@Override
 	public void onEnable() {
 
+		// Define singleton instance
+		INSTANCE = this;
+
 		// Init BungeeCord plugin messages
 		this.getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
 
 		// Register all events in the plugin manager
 		getServer().getPluginManager().registerEvents(this, this);
 
-		// Init config
+		// Init configurations
 		saveDefaultConfig();
 		config = this.getConfig();
+		text = new Text(this.getServer(), config);
 
-		// Init members
-		INSTANCE = this;
-		handlers = new PlayerList();
-		chat = new Chat(this.getServer(), config);
-		state = GameState.PAUSE;
-		winners = new ArrayList<>(3);
-		updateManager = new UpdateManager();
-		playerVelocity = new PlayerVelocity();
-		world = getServer().getWorld("world");
-
+		// Switch to session world
+		world = new WorldCreator("_session").createWorld();
 		if (world == null) {
-			System.out.println("World not found!");
+			getLogger().log(Level.SEVERE, "Could not create world!");
 			Bukkit.getPluginManager().disablePlugin(this);
 		}
-		updateManager.add(playerVelocity);
+
+		state = GameState.PAUSE;
+		initialize();
 	}
 
-	// When start countdown has finished, start game
+	// Destructor
 	@Override
-	public void finished(Object... args) {
-		setState(GameState.INGAME);
+	public void onDisable() {
+
+		if (state != GameState.PAUSE) {
+			Corona.get().getLogger().log(Level.INFO, "Trying to reset...");
+			try {
+				WorldLoader.resetWorld("_session", "_rollback");
+			} catch (Exception ex) {
+				Corona.get().getLogger().log(Level.WARNING, "Error while resetting world: " + ex.getMessage());
+			} finally {
+				get().getLogger().log(Level.INFO, "Resetting finished");
+			}
+		}
 	}
 
 	// Add player to manager, unpause plugin if needed
 	@EventHandler
 	public void onPlayerJoin(PlayerJoinEvent e) {
+		e.getPlayer().teleport(world.getSpawnLocation());
 
 		switch (state) {
 			case PAUSE:
+				new PlayerHandler(e.getPlayer(), PlayerState.HEALTHY);
 				setState(GameState.STARTING);
+				break;
 			case STARTING:
-				handlers.add(e.getPlayer(), PlayerState.HEALTHY);
+				new PlayerHandler(e.getPlayer(), PlayerState.HEALTHY);
 				break;
 			case INGAME:
 			case END:
-				handlers.add(e.getPlayer(), PlayerState.DEAD);
+				new PlayerHandler(e.getPlayer(), PlayerState.DEAD);
 		}
 	}
 
 	// Remove player from manager, pause plugin if needed
 	@EventHandler
 	public void onPlayerQuit(PlayerQuitEvent e) {
-		handlers.remove(e.getPlayer());
+		handlers.get(e.getPlayer()).remove();
 
-		if (getServer().getOnlinePlayers().size() <= 0) {
+		if (getServer().getOnlinePlayers().size() <= 1) {
 			setState(GameState.PAUSE);
+
+			new BukkitRunnable() {
+				@Override
+				public void run() {
+					Corona.get().getLogger().log(Level.INFO, "Trying to reset...");
+					try {
+						WorldLoader.resetWorld("_session", "_rollback");
+					} catch (Exception ex) {
+						Corona.get().getLogger().log(Level.WARNING, "Error while resetting world: " + ex.getMessage());
+					} finally {
+						get().getLogger().log(Level.INFO, "Resetting finished");
+					}
+				}
+			}.runTaskLater(this, config.getInt("config.timeout", 100));
 		}
 	}
 
@@ -117,44 +179,81 @@ public final class Corona extends JavaPlugin implements Listener, TimerCallback 
 		if (id == PlayerHandler.COUGH_ID) {
 
 			// Cough
-			updateManager.add(new Cough(e.getPlayer(), 2.0d, 200L));
+			new Cough(handlers.get(e.getPlayer()), 2.0d, 200L);
 			handlers.get(e.getPlayer()).usedItem(PlayerHandler.COUGH_ID);
-			Corona.getInstance().world.playSound(e.getPlayer().getEyeLocation(), Sound.ENTITY_WITHER_BREAK_BLOCK, 1.0f, 1.0f);
+			Corona.get().world.playSound(e.getPlayer().getEyeLocation(), Sound.ENTITY_WITHER_BREAK_BLOCK, 1.0f, 1.0f);
 		} else if (id == PlayerHandler.SNEEZE_ID) {
 
 			// Sneeze
 			Snowball snowball = e.getPlayer().launchProjectile(Snowball.class);
-			updateManager.add(new Sneeze(snowball));
+			new Sneeze(snowball);
 			handlers.get(e.getPlayer()).usedItem(PlayerHandler.SNEEZE_ID);
-			Corona.getInstance().world.playSound(e.getPlayer().getEyeLocation(), Sound.ENTITY_ENDER_DRAGON_SHOOT, 1.0f, 1.0f);
+			Corona.get().world.playSound(e.getPlayer().getEyeLocation(), Sound.ENTITY_ENDER_DRAGON_SHOOT, 1.0f, 1.0f);
 		}
 	}
 
-	// Infect player on sneeze hit
 	@EventHandler
-	public void onSneezeHit(EntityDamageByEntityEvent e) {
+	// Safety measure, even though players can't die
+	public void onPlayerRespawn(PlayerSpawnLocationEvent e) {
+		e.getPlayer().teleport(world.getSpawnLocation());
+	}
 
-		if (e.getDamager() instanceof Snowball
-				&& e.getEntity() instanceof Player
-				&& e.getDamager() != e.getEntity()
-		) {
-			Snowball snowball = (Snowball)e.getDamager();
-			if (snowball.getShooter() instanceof Player) {
-				PlayerHandler infected = handlers.get((Player)e.getEntity());
-				PlayerHandler infector = handlers.get((Player)e.getDamager());
-				infected.getInfectedBy(infector);
+	@EventHandler
+	// Infect player and destroy sneeze
+	public void onSneezeHit(ProjectileHitEvent e) {
+
+		if (e.getEntity() instanceof Snowball) {
+			Snowball snowball = (Snowball)e.getEntity();
+			Sneeze sneeze = Sneeze.get(snowball);
+
+			if (sneeze != null) {
+
+				// Player hit
+				if (snowball.getShooter() instanceof Player && e.getHitEntity() instanceof Player) {
+					PlayerHandler infected = handlers.get((Player) e.getHitEntity());
+					PlayerHandler infector = handlers.get((Player) snowball.getShooter());
+
+					if (infected != null && infected.getState() != PlayerState.DEAD)
+						infected.getInfectedBy(infector);
+				}
+
+				// Remove sneeze
+				sneeze.remove();
 			}
 		}
+	}
+
+	@EventHandler
+	// Disable moving items in inventory
+	public void inventoryClick(InventoryClickEvent e) {
+		e.setCancelled(true);
+	}
+
+	@EventHandler
+	// Disable dropping items
+	public void onItemDrop(PlayerDropItemEvent e) {
+		e.setCancelled(true);
+	}
+
+	@EventHandler
+	// Disable swapping items
+	public void onItemSwap(PlayerSwapHandItemsEvent e) {
+		e.setCancelled(true);
 	}
 
 	// When a player's state changes, check if round has ended
 	public void playerStateChange() {
 
+		if (state == GameState.PAUSE || state == GameState.END) return;
+
 		// If only one player is alive, he wins
-		PlayerState[] livingStates = {PlayerState.HEALTHY, PlayerState.INCUBATING, PlayerState.INFECTED};
-		PlayerState[] infectedStates = {PlayerState.INCUBATING, PlayerState.INFECTED};
-		if (handlers.getPlayers(livingStates).size() == 1 || handlers.getPlayers(infectedStates).size() == 0) {
-			winners = handlers.getPlayers(livingStates);
+		if (handlers.getPlayers(PlayerState.HEALTHY, PlayerState.INCUBATING, PlayerState.INFECTED).size() == 1) {
+			winner = handlers.getPlayers(PlayerState.HEALTHY, PlayerState.INCUBATING, PlayerState.INFECTED).get(0);
+			setState(GameState.END);
+		}
+
+		// If no one is infected, all survivers win
+		else if (handlers.getPlayers(PlayerState.INCUBATING, PlayerState.INFECTED).size() == 0) {
 			setState(GameState.END);
 		}
 	}
@@ -173,18 +272,26 @@ public final class Corona extends JavaPlugin implements Listener, TimerCallback 
 	private void setState(GameState state) {
 
 		if (this.state == state) return;
+		this.state = state;
 
 		switch (state) {
 			case STARTING:
 
+				// Reset
+				initialize();
+				for (Player player : this.getServer().getOnlinePlayers()) {
+					player.teleport(world.getSpawnLocation());
+					new PlayerHandler(player, PlayerState.HEALTHY);
+				}
+
 				// Run clocks
-				updateManager.runTaskTimer(this, 0, 1);
+				updater.runTaskTimer(this, 0, 1);
 
 				// Send chat message and start countdown
-				chat.sendMessage("game-start");
-				Timer countdown = new Timer(10*20, this);
+				text.sendMessage("starting");
+				Timer startTimer = new Timer(10*20, startCallback);
 				for (Player player : handlers.getPlayers()) {
-					handlers.get(player).setStartTimer(countdown);
+					handlers.get(player).setGlobalTimer(startTimer);
 				}
 				break;
 			case INGAME:
@@ -197,12 +304,13 @@ public final class Corona extends JavaPlugin implements Listener, TimerCallback 
 				int infected = new Random().nextInt(players.size());
 				int i = 0;
 				for (Player player : players) {
-					if (i == infected) this.handlers.get(player).setState(PlayerState.INCUBATING);
-					else chat.sendTitle("start", player);
+					if (i == infected) this.handlers.get(player).getInfectedBy(null);
+					else text.sendTitle("start", player);
 				}
 				break;
 			case END:
 
+				Timer endTimer = new Timer(10*20, endCallback);
 				for (Player player : getServer().getOnlinePlayers()) {
 
 					// Kill everyone
@@ -212,30 +320,36 @@ public final class Corona extends JavaPlugin implements Listener, TimerCallback 
 					Firework firework = player.getWorld().spawn(player.getLocation(), Firework.class);
 					FireworkMeta fireworkMeta = firework.getFireworkMeta();
 					Builder builder = FireworkEffect.builder();
-
-					ArrayList<Color> colors = new ArrayList<>();
-					colors.add(Color.GREEN);
-					colors.add(Color.WHITE);
-
-					fireworkMeta.addEffect(builder.trail(true).build());
-					fireworkMeta.addEffect(builder.withFade(colors).build());
-					fireworkMeta.addEffect(builder.with(FireworkEffect.Type.STAR).build());
+					fireworkMeta.addEffect(builder
+							.withTrail()
+							.withColor(Color.GREEN)
+							.withFade(Color.WHITE)
+							.with(FireworkEffect.Type.STAR).build());
 					fireworkMeta.setPower(2);
 					firework.setFireworkMeta(fireworkMeta);
 
 					// Send winner title
-					if (winners.size() == 1)
-						chat.sendTitle("onewinner", player, new String[][]{{"name", winners.get(0).getDisplayName()}});
+					if (winner != null)
+						text.sendTitle("one-winner", player, new String[][]{{"name", winner.getDisplayName()}});
 					else
-						chat.sendTitle("multiplewinners", player);
+						text.sendTitle("multiple-winners", player);
+
+					// Set end timer
+					handlers.get(player).setGlobalTimer(endTimer);
 				}
 				break;
 			case PAUSE:
 
 				// End clocks
-				updateManager.cancel();
+				updater.cancel();
 		}
+	}
 
-		this.state = state;
+	// Initialize all non-final members
+	private void initialize() {
+		winner = null;
+		updater = new Updater();
+		playerVelocity = new PlayerVelocity();
+		handlers = new PlayerList();
 	}
 }

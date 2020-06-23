@@ -4,9 +4,10 @@ import me.noodian.corona.Corona;
 import me.noodian.corona.ui.Displayable;
 import me.noodian.corona.ui.UiDisplay;
 
+import java.util.HashSet;
 import java.util.Set;
 
-public class Timer implements Displayable, Ticking {
+public class Timer extends Ticking implements Displayable {
 
 	private final TimerCallback callback;
 	private final Object[] args;
@@ -15,25 +16,34 @@ public class Timer implements Displayable, Ticking {
 	private Set<UiDisplay> subscribers;
 
 	public Timer(int ticks, TimerCallback callback) {
+		int realTicks = Math.max(ticks, 0);
+		this.initialTicks = realTicks;
+		this.ticks = realTicks;
+
 		this.callback = callback;
-		this.initialTicks = ticks;
-		this.ticks = this.initialTicks;
 		this.args = null;
-		Corona.getInstance().updateManager.add(this);
+		this.subscribers = new HashSet<>();
+
+		start();
 	}
 
 	public Timer(int ticks, TimerCallback callback, Object[] args) {
+		int realTicks = Math.max(ticks, 0);
+		this.initialTicks = realTicks;
+		this.ticks = realTicks;
+
 		this.callback = callback;
-		this.initialTicks = ticks;
-		this.ticks = this.initialTicks;
 		this.args = args;
-		Corona.getInstance().updateManager.add(this);
+		this.subscribers = new HashSet<>();
+
+		start();
 	}
 
 	@Override
 	// Add a subscriber whose graphics should be updated
 	public void addSubscriber(UiDisplay subscriber) {
 		subscribers.add(subscriber);
+		updateSubscribers();
 	}
 
 	@Override
@@ -48,19 +58,26 @@ public class Timer implements Displayable, Ticking {
 
 		// Check if timer has finished
 		if (ticks <= 0) {
-			Corona.getInstance().updateManager.remove(this);
+			Corona.get().updater.remove(this);
 			if (this.callback != null) callback.finished(args);
+		} else {
+			ticks--;
 		}
 
-		// Update
-		for (UiDisplay subscriber : subscribers) subscriber.update(ticks, initialTicks);
-		ticks--;
+		updateSubscribers();
 	}
 
+	@Override
 	// Delete timer
 	public void remove() {
-		Corona.getInstance().updateManager.remove(this);
-		this.subscribers = null;
+		this.subscribers = new HashSet<>();
 		this.ticks = 0;
+		stop();
+	}
+
+	// Update all subscribers
+	private void updateSubscribers() {
+		for (UiDisplay subscriber : subscribers)
+			if (subscriber != null) subscriber.update(ticks, initialTicks);
 	}
 }

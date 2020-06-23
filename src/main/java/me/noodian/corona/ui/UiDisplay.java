@@ -12,6 +12,7 @@ public abstract class UiDisplay {
 
 	// Subscribe to a new publisher, unsubscribe from the old one
 	public void subscribeTo(Displayable publisher) {
+		if (this.publisher == publisher) return;
 		if (this.publisher != null) this.publisher.removeSubscriber(this);
 		this.publisher = publisher;
 

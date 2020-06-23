@@ -1,8 +1,10 @@
 package me.noodian.corona.ui;
 
+import me.noodian.corona.Corona;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.scoreboard.*;
 
 import java.util.ArrayList;
@@ -15,17 +17,21 @@ public class ScoreboardDisplay extends UiDisplay {
 	public ScoreboardDisplay() {
 		ScoreboardManager manager = Bukkit.getScoreboardManager();
 		if (manager == null) return;
-		Scoreboard board = manager.getNewScoreboard();
+		Scoreboard board = manager.getMainScoreboard();
 
-		objective = board.registerNewObjective("living", "dummy", "Corona");
+		objective = board.registerNewObjective("living", "dummy", Corona.get().text.get("scoreboard.title"));
 		objective.setDisplaySlot(DisplaySlot.SIDEBAR);
 
 		alive = board.registerNewTeam("alive");
-		alive.setColor(ChatColor.GREEN);
+		ChatColor aliveColor = ChatColor.getByChar(Corona.get().text.get("scoreboard.color.alive"));
+		if (aliveColor == null) aliveColor = ChatColor.GREEN;
+		alive.setColor(aliveColor);
 		alive.setOption(Team.Option.COLLISION_RULE, Team.OptionStatus.NEVER);
 
 		dead = board.registerNewTeam("dead");
-		dead.setColor(ChatColor.GRAY);
+		ChatColor deadColor = ChatColor.getByChar(Corona.get().text.get("scoreboard.color.dead"));
+		if (deadColor == null) deadColor = ChatColor.GRAY;
+		dead.setColor(deadColor);
 		dead.setOption(Team.Option.COLLISION_RULE, Team.OptionStatus.NEVER);
 		dead.setCanSeeFriendlyInvisibles(true);
 
@@ -34,7 +40,6 @@ public class ScoreboardDisplay extends UiDisplay {
 		}
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
 	// Update the scoreboard with list of alive and list of dead players
 	public void update(Object... args) {
@@ -61,27 +66,31 @@ public class ScoreboardDisplay extends UiDisplay {
 		for (Player player : newDead) {
 			counter = countUp(counter, player.getDisplayName());
 		}
+		if (newDead.size() == 0) counter = countUp(counter, "None");
 
-		counter = countUp(counter, "Dead:");
+		counter = countUp(counter, Corona.get().text.get("scoreboard.dead"));
 		counter = countUp(counter, "");
 
 		for (Player player : newAlive) {
 			counter = countUp(counter, player.getDisplayName());
 		}
+		if (newAlive.size() == 0) counter = countUp(counter, "None");
 
-		countUp(counter, "Alive:");
+		countUp(counter, Corona.get().text.get("scoreboard.alive"));
 	}
 
+	// Set the entries score to the counter and increase the counter
 	private int countUp(int counter, String entry) {
 		Score score = objective.getScore(entry);
 		score.setScore(counter);
 		return ++counter;
 	}
 
-	private void updateTeam(Team team, ArrayList<Player> newEntries) {
+	// Set the team's entries to the list
+	private void updateTeam(Team team, ArrayList<Player> entries) {
 		for (String oldEntry : team.getEntries())
 			team.removeEntry(oldEntry);
-		for (Player newEntry : newEntries)
-			alive.addEntry(newEntry.getDisplayName());
+		for (Player newEntry : entries)
+			team.addEntry(newEntry.getDisplayName());
 	}
 }

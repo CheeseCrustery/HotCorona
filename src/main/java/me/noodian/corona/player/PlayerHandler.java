@@ -8,66 +8,33 @@ import me.noodian.corona.ui.HpDisplay;
 import me.noodian.corona.ui.XpDisplay;
 import me.noodian.util.NameEncoder;
 import org.bukkit.*;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+import org.bukkit.util.Vector;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Random;
+import java.util.logging.Level;
 
 
-public class PlayerHandler implements Ticking {
+public class PlayerHandler extends Ticking {
 
 	public static final int COUGH_ID = 0, SNEEZE_ID = 1;
 
 	final PlayerPacketHandler packetHandler;
 
-	private final Player player;
-	private final PlayerList manager;
+	private Player player = null;
 	private PlayerState state;
 	private final HpDisplay hpDisplay;
 	private final XpDisplay xpDisplay;
 	private final Timer[] cooldowns;
-	private Timer deathTimer, infectionTimer, startTimer;
-
-	PlayerHandler(Player player, PlayerState state, PlayerList manager) {
-		this.player = player;
-		this.state = state;
-		this.manager = manager;
-		this.cooldowns = new Timer[2];
-		this.packetHandler = new PlayerPacketHandler(player);
-
-		this.hpDisplay = new HpDisplay(this);
-		this.xpDisplay = new XpDisplay(this);
-	}
-
-	@Override
-	// If infected, play sounds and particles
-	public void tick() {
-
-		// Play effects when infected
-		if (state == PlayerState.INFECTED) {
-			Random random = new Random();
-			World world = Bukkit.getServer().getWorld("world");
-			if (world != null) {
-				if (random.nextFloat() > 0.9)
-					world.playSound(player.getEyeLocation(), Sound.ENTITY_SLIME_DEATH, 1.0f, 1.0f);
-				else if (random.nextFloat() > 0.4)
-					world.spawnParticle(Particle.SLIME, player.getLocation(), 1);
-			}
-		}
-
-		// Update which XP countdown to display
-		int held = player.getInventory().getHeldItemSlot();
-		if (held < cooldowns.length && cooldowns[held] != null)
-			xpDisplay.subscribeTo(cooldowns[held]);
-		else if (infectionTimer != null)
-			xpDisplay.subscribeTo(infectionTimer);
-		else
-			xpDisplay.subscribeTo(startTimer);
-	}
+	private Timer deathTimer, infectionTimer, globalTimer;
 
 	// When hp has ticked down, die
 	public final TimerCallback deathCallback = args -> setState(PlayerState.DEAD);
@@ -87,12 +54,64 @@ public class PlayerHandler implements Ticking {
 			switch ((int)args[0]) {
 				case COUGH_ID:
 					giveCough();
+					player.playSound(player.getEyeLocation(), Sound.BLOCK_NOTE_BLOCK_HARP, 7, COUGH_ID);
 					break;
 				case SNEEZE_ID:
+				player.playSound(player.getEyeLocation(), Sound.BLOCK_NOTE_BLOCK_HARP, 7, SNEEZE_ID);
 					giveSneeze();
 			}
 		}
 	};
+
+	public PlayerHandler(Player player, PlayerState state) {
+		this.player = player;
+		this.state = state;
+		this.cooldowns = new Timer[2];
+		this.packetHandler = new PlayerPacketHandler(player);
+
+		this.hpDisplay = new HpDisplay(this);
+		this.xpDisplay = new XpDisplay(this);
+
+		AttributeInstance maxHealth = this.player.getAttribute(Attribute.GENERIC_MAX_HEALTH);
+		if (maxHealth != null) this.player.setHealth(maxHealth.getValue());
+		clearEverything();
+
+		Corona.get().handlers.add(this);
+		start();
+	}
+
+	@Override
+	// If infected, play sounds and particles
+	public void tick() {
+
+		// Play effects
+		if (state == PlayerState.INCUBATING)
+			Corona.get().world.spawnParticle(Particle.SPELL, player.getEyeLocation(), 10, 0.5, 0.3, 0.5);
+		else if (state == PlayerState.INFECTED)
+			Corona.get().world.spawnParticle(Particle.SLIME, player.getEyeLocation(), 1, 0.5, -1.0, 0.5);
+
+		// Update which XP countdown to display
+		int held = player.getInventory().getHeldItemSlot();
+		if (held < cooldowns.length && cooldowns[held] != null)
+			xpDisplay.subscribeTo(cooldowns[held]);
+		else if (infectionTimer != null)
+			xpDisplay.subscribeTo(infectionTimer);
+		else
+			xpDisplay.subscribeTo(globalTimer);
+	}
+
+	@Override
+	// Safely remove player handler
+	public void remove() {
+		Corona.get().handlers.remove(this);
+		packetHandler.remove();
+		stop();
+	}
+
+	// Make the packet handler show a title
+	public void showTitle(String text) {
+		packetHandler.showTitle(text);
+	}
 
 	// Return the player object
 	public Player getPlayer() {
@@ -110,18 +129,18 @@ public class PlayerHandler implements Ticking {
 
 		switch (itemId) {
 			case COUGH_ID:
-				player.getInventory().clear(COUGH_ID);
+				giveFiller(COUGH_ID, Corona.get().text.get("item.cough"));
 				cooldowns[COUGH_ID] = new Timer(5*20, this.cooldownCallback, new Object[]{COUGH_ID});
 				break;
 			case SNEEZE_ID:
-				player.getInventory().clear(SNEEZE_ID);
+				giveFiller(SNEEZE_ID, Corona.get().text.get("item.sneeze"));
 				cooldowns[SNEEZE_ID] = new Timer(10*20, this.cooldownCallback, new Object[]{SNEEZE_ID});
 		}
 	}
 
 	// Set the start timer
-	public void setStartTimer(Timer startTimer) {
-		this.startTimer = startTimer;
+	public void setGlobalTimer(Timer globalTimer) {
+		this.globalTimer = globalTimer;
 	}
 
 	// Change the state of the player. Returns true if successful.
@@ -133,98 +152,112 @@ public class PlayerHandler implements Ticking {
 			case HEALTHY:
 
 				clearEverything();
+
 				break;
 			case INCUBATING:
 
 				// Disregard if already infected
 				if (this.state == PlayerState.INFECTED) return false;
 
-				// Show title
-				Corona.getInstance().chat.sendTitle("infected", player);
-
-				// Clear inventory
-				player.getInventory().clear();
+				clearEverything();
+				Corona.get().text.sendTitle("infected", player);
 
 				// Add effects
-				PotionEffect sickness = new PotionEffect(PotionEffectType.CONFUSION, 5, 1);
-				PotionEffect blindness = new PotionEffect(PotionEffectType.BLINDNESS, 5,  1);
-				PotionEffect slowness = new PotionEffect(PotionEffectType.SLOW, 5, 1);
-				player.addPotionEffects(Arrays.asList(sickness, blindness, slowness));
-				Corona.getInstance().world.playSound(player.getEyeLocation(), Sound.ENTITY_WITHER_SPAWN, 1.0f, 1.0f);
+				PotionEffect nausea = new PotionEffect(PotionEffectType.CONFUSION, 8 * 20, 5);
+				PotionEffect blindness = new PotionEffect(PotionEffectType.BLINDNESS, 5 * 20,  1);
+				PotionEffect slowness = new PotionEffect(PotionEffectType.SLOW, 5 * 20, 3);
+				player.addPotionEffects(Arrays.asList(nausea, blindness, slowness));
+				Corona.get().world.playSound(player.getEyeLocation(), Sound.ENTITY_WITHER_SPAWN, 1.0f, 1.0f);
 
 				break;
 			case INFECTED:
 
-				// Clear inventory
-				player.getInventory().clear();
-
-				// Set helmet
+				// Manage inventory
+				clearEverything();
 				player.getInventory().setHelmet(new ItemStack(Material.SLIME_BLOCK));
-
-				// Run countdown to death
-				int ticks = 25 - (Corona.getInstance().getGameDuration()*20) / 5;
-				deathTimer = new Timer(ticks, deathCallback);
-				hpDisplay.subscribeTo(deathTimer);
-
-				// Add items
 				giveCough();
 				giveSneeze();
+
+				// Run countdown to death
+				// infectionlength(gameduration) = initiallength - gameduration * drain
+				int initiallength = Corona.get().config.getInt("config.initial-infection-length", 25);
+				double drain = Corona.get().config.getDouble("config.infection-length-drain", 0.2);
+				int ticks = (int) (initiallength * 20 - Corona.get().getGameDuration() * drain);
+				deathTimer = new Timer(ticks, deathCallback);
+				hpDisplay.subscribeTo(deathTimer);
 
 				break;
 			case DEAD:
 
 				clearEverything();
 
-				// Play sound
-				Corona.getInstance().world.playSound(player.getEyeLocation(), Sound.ENTITY_DRAGON_FIREBALL_EXPLODE, 1.0f, 1.0f);
-
-				// Allow flying
-				player.setAllowFlight(true);
-
 				// Set self invisible to alive
-				PlayerState[] livingStates = {PlayerState.HEALTHY, PlayerState.INCUBATING, PlayerState.INFECTED};
-				for (Player alive : manager.getPlayers(livingStates)) {
-					alive.hidePlayer(Corona.getInstance(), player);
+				ArrayList<Player> livingPlayers = Corona.get().handlers.getPlayers(
+						PlayerState.HEALTHY, PlayerState.INCUBATING, PlayerState.INFECTED);
+				for (Player alive : livingPlayers) {
+					alive.hidePlayer(Corona.get(), player);
 				}
 
 				// Set dead visible to self
-				for (Player dead : manager.getPlayers(PlayerState.DEAD)) {
-					dead.hidePlayer(Corona.getInstance(), player);
+				ArrayList<Player> deadPlayers = Corona.get().handlers.getPlayers(PlayerState.DEAD);
+				for (Player dead : deadPlayers) {
+					dead.hidePlayer(Corona.get(), player);
 				}
+
+				// UI
+				Corona.get().world.playSound(player.getEyeLocation(), Sound.ENTITY_DRAGON_FIREBALL_EXPLODE, 1.0f, 1.0f);
+				if (livingPlayers.size() > 2)
+					Corona.get().text.sendTitle("dead", player);
+
+				// Fly up
+				player.setAllowFlight(true);
+				player.setFlying(true);
+				player.setVelocity(new Vector(0, 5, 0));
 		}
 
-		manager.stateChange(this, this.state, state);
+		Corona.get().handlers.stateChange(this, this.state, state);
 		this.state = state;
 		return true;
 	}
 
 	// Return the state
-	PlayerState getState() {
+	public PlayerState getState() {
 		return state;
+	}
+
+	// Check if the specified item is a filler
+	public boolean isFiller(int slot) {
+		return (state == PlayerState.INFECTED && (slot == COUGH_ID || slot == SNEEZE_ID));
 	}
 
 	// Clear player countdown, inventory, and effects
 	private void clearEverything() {
 
+		// Clear timers
 		if (deathTimer != null) {
 			deathTimer.remove();
 			deathTimer = null;
 		}
-
 		if (infectionTimer != null) {
 			infectionTimer.remove();
 			infectionTimer = null;
 		}
-
-		startTimer = null;
-
+		globalTimer = null;
 		for (int i = 0; i < cooldowns.length; i++) {
 			if (cooldowns[i] != null) {
 				cooldowns[i].remove();
 				cooldowns[i] = null;
 			}
 		}
+
+		// Clear hunger
+		player.setFoodLevel(20);
+
+		// Clear inventory
+		player.getInventory().setArmorContents(null);
 		player.getInventory().clear();
+
+		// Clear effects
 		for (PotionEffect effect : player.getActivePotionEffects())
 			player.removePotionEffect(effect.getType());
 	}
@@ -234,7 +267,7 @@ public class PlayerHandler implements Ticking {
 		ItemStack cough = new ItemStack(Material.SLIME_BLOCK);
 		ItemMeta meta = cough.getItemMeta();
 		if (meta != null) {
-			meta.setDisplayName(Corona.getInstance().config.getString("item.cough") + NameEncoder.encode(COUGH_ID));
+			meta.setDisplayName(Corona.get().text.get("item.cough") + NameEncoder.encode(COUGH_ID));
 			cough.setItemMeta(meta);
 		}
 		player.getInventory().setItem(COUGH_ID, cough);
@@ -245,9 +278,20 @@ public class PlayerHandler implements Ticking {
 		ItemStack sneeze = new ItemStack(Material.SLIME_BALL);
 		ItemMeta meta = sneeze.getItemMeta();
 		if (meta != null) {
-			meta.setDisplayName(Corona.getInstance().config.getString("item.sneeze") + NameEncoder.encode(SNEEZE_ID));
+			meta.setDisplayName(Corona.get().text.get("item.sneeze") + NameEncoder.encode(SNEEZE_ID));
 			sneeze.setItemMeta(meta);
 		}
 		player.getInventory().setItem(SNEEZE_ID, sneeze);
+	}
+
+	// Fill the slot with an empty item
+	private void giveFiller(int slot, String name) {
+		ItemStack filler = new ItemStack(Material.BLACK_STAINED_GLASS_PANE);
+		ItemMeta meta = filler.getItemMeta();
+		if (meta != null) {
+			meta.setDisplayName("§8" + name);
+			filler.setItemMeta(meta);
+		}
+		player.getInventory().setItem(slot, filler);
 	}
 }

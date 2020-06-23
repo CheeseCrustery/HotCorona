@@ -41,34 +41,11 @@ public class PlayerList implements Displayable {
 		subscribers.remove(subscriber);
 	}
 
-	// Create player handler and store it accordingly
-	public void add(Player player, PlayerState state) {
-		if (players.get(player) != null) return;
-
-		PlayerHandler handler = new PlayerHandler(player, state, this);
-		states.get(PlayerState.HEALTHY).add(player);
-		players.put(player, handler);
-		handlers.add(handler);
-	}
-
-	// Remove player handler
-	public void remove(Player player) {
-
-		PlayerHandler handler = players.get(player);
-		if (handler == null) return;
-
-		handler.packetHandler.Remove();
-		Corona.getInstance().updateManager.remove(handler);
-		states.get(handler.getState()).remove(player);
-		players.remove(player);
-		handlers.remove(handler);
-	}
-
 	// Get all players in the specified states
 	public ArrayList<Player> getPlayers(PlayerState... states) {
 		ArrayList<Player> out = new ArrayList<>();
 
-		if (states == null)
+		if (states.length == 0)
 			for (PlayerHandler handler : handlers)
 				out.add(handler.getPlayer());
 		else
@@ -82,15 +59,39 @@ public class PlayerList implements Displayable {
 		return players.get(player);
 	}
 
+	// Add player handler to lists
+	void add(PlayerHandler handler) {
+		if (handlers.contains(handler)) return;
+
+		states.get(PlayerState.HEALTHY).add(handler.getPlayer());
+		players.put(handler.getPlayer(), handler);
+		handlers.add(handler);
+
+		updateSubscribers();
+	}
+
+	// Remove player handler from lists
+	void remove(PlayerHandler handler) {
+		states.get(handler.getState()).remove(handler.getPlayer());
+		players.remove(handler.getPlayer());
+		handlers.remove(handler);
+
+		updateSubscribers();
+	}
+
 	// When player state changes, update list and UI
 	void stateChange(PlayerHandler handler, PlayerState oldState, PlayerState newState) {
 		states.get(oldState).remove(handler.getPlayer());
 		states.get(newState).add(handler.getPlayer());
 
+		updateSubscribers();
+		Corona.get().playerStateChange();
+	}
+
+	// Update the scoreboards data
+	private void updateSubscribers() {
 		Object alive = getPlayers(PlayerState.INFECTED, PlayerState.INCUBATING, PlayerState.HEALTHY);
 		Object dead = getPlayers(PlayerState.DEAD);
 		for (UiDisplay subscriber : subscribers) subscriber.update(alive, dead);
-
-		Corona.getInstance().playerStateChange();
 	}
 }
