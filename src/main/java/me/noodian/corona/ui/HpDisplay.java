@@ -2,11 +2,8 @@ package me.noodian.corona.ui;
 
 import me.noodian.corona.Corona;
 import me.noodian.corona.player.PlayerHandler;
-import org.bukkit.Bukkit;
 import org.bukkit.Sound;
-import org.bukkit.World;
-import org.bukkit.attribute.Attribute;
-import org.bukkit.attribute.AttributeInstance;
+import org.bukkit.attribute.*;
 
 public class HpDisplay extends UiDisplay {
 

@@ -1,15 +1,10 @@
 package me.noodian.corona.player;
 
 import me.noodian.corona.Corona;
-import me.noodian.corona.ui.Displayable;
-import me.noodian.corona.ui.ScoreboardDisplay;
-import me.noodian.corona.ui.UiDisplay;
+import me.noodian.corona.ui.*;
 import org.bukkit.entity.Player;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 
 public class PlayerList implements Displayable {
 

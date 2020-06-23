@@ -1,27 +1,19 @@
 package me.noodian.corona.player;
 
 import me.noodian.corona.Corona;
-import me.noodian.corona.time.Ticking;
-import me.noodian.corona.time.Timer;
-import me.noodian.corona.time.TimerCallback;
-import me.noodian.corona.ui.HpDisplay;
-import me.noodian.corona.ui.XpDisplay;
+import me.noodian.corona.time.*;
+import me.noodian.corona.ui.*;
 import me.noodian.util.NameEncoder;
 import org.bukkit.*;
-import org.bukkit.attribute.Attribute;
-import org.bukkit.attribute.AttributeInstance;
+import org.bukkit.potion.*;
+import org.bukkit.attribute.*;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.potion.PotionEffect;
-import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Random;
-import java.util.logging.Level;
-
 
 public class PlayerHandler extends Ticking {
 
@@ -29,7 +21,7 @@ public class PlayerHandler extends Ticking {
 
 	final PlayerPacketHandler packetHandler;
 
-	private Player player = null;
+	private Player player;
 	private PlayerState state;
 	private final HpDisplay hpDisplay;
 	private final XpDisplay xpDisplay;
@@ -57,7 +49,7 @@ public class PlayerHandler extends Ticking {
 					player.playSound(player.getEyeLocation(), Sound.BLOCK_NOTE_BLOCK_HARP, 7, COUGH_ID);
 					break;
 				case SNEEZE_ID:
-				player.playSound(player.getEyeLocation(), Sound.BLOCK_NOTE_BLOCK_HARP, 7, SNEEZE_ID);
+					player.playSound(player.getEyeLocation(), Sound.BLOCK_NOTE_BLOCK_HARP, 7, SNEEZE_ID);
 					giveSneeze();
 			}
 		}
@@ -223,11 +215,6 @@ public class PlayerHandler extends Ticking {
 	// Return the state
 	public PlayerState getState() {
 		return state;
-	}
-
-	// Check if the specified item is a filler
-	public boolean isFiller(int slot) {
-		return (state == PlayerState.INFECTED && (slot == COUGH_ID || slot == SNEEZE_ID));
 	}
 
 	// Clear player countdown, inventory, and effects

@@ -1,6 +1,5 @@
 package me.noodian.util;
 
-@SuppressWarnings("unused")
 public class NameEncoder {
 
 	// Add a hex value to the end of the string

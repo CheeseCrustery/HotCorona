@@ -6,7 +6,6 @@ public class Pair<T> {
 
 	public Pair() {	}
 
-	@SuppressWarnings("unused")
 	public Pair(T x, T y) {
 		this.x = x;
 		this.y = y;

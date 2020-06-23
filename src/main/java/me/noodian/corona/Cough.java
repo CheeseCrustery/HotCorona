@@ -1,14 +1,11 @@
 package me.noodian.corona;
 
-import me.noodian.corona.player.PlayerHandler;
-import me.noodian.corona.player.PlayerState;
+import me.noodian.corona.player.*;
 import me.noodian.corona.time.Ticking;
 import org.bukkit.Bukkit;
 import org.bukkit.Particle;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.Player;
-import org.bukkit.util.BoundingBox;
-import org.bukkit.util.Vector;
+import org.bukkit.entity.*;
+import org.bukkit.util.*;
 
 import java.util.Collection;
 

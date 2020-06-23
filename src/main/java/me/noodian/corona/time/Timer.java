@@ -1,11 +1,9 @@
 package me.noodian.corona.time;
 
 import me.noodian.corona.Corona;
-import me.noodian.corona.ui.Displayable;
-import me.noodian.corona.ui.UiDisplay;
+import me.noodian.corona.ui.*;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 
 public class Timer extends Ticking implements Displayable {
 
