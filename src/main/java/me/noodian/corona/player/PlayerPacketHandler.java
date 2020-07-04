@@ -1,7 +1,7 @@
 package me.noodian.corona.player;
 
 import io.netty.channel.*;
-import me.noodian.corona.Corona;
+import me.noodian.corona.Game;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.*;
 
@@ -49,7 +49,7 @@ class PlayerPacketHandler extends ChannelDuplexHandler {
 
 		} catch (Exception e) {
 			e.printStackTrace();
-			Corona.get().getLogger().log(Level.SEVERE, e.getMessage());
+			Game.get().log(Level.SEVERE, e.getMessage());
 		}
 	}
 
@@ -76,7 +76,7 @@ class PlayerPacketHandler extends ChannelDuplexHandler {
 			super.write(context, packet, channelPromise);
 		} catch (Exception e) {
 			e.printStackTrace();
-			Corona.get().getLogger().log(Level.SEVERE, e.getMessage());
+			Game.get().log(Level.SEVERE, e.getMessage());
 		}
 	}
 
@@ -100,7 +100,7 @@ class PlayerPacketHandler extends ChannelDuplexHandler {
 			playerConnection.getClass().getMethod("sendPacket", getClass("Packet", NMS)).invoke(playerConnection, packet);
 		} catch (Exception e) {
 			e.printStackTrace();
-			Corona.get().getLogger().log(Level.SEVERE, e.getMessage());
+			Game.get().log(Level.SEVERE, e.getMessage());
 		}
 	}
 
@@ -116,7 +116,7 @@ class PlayerPacketHandler extends ChannelDuplexHandler {
 			channel = (Channel) networkManager.getClass().getField("channel").get(networkManager);
 		} catch (Exception e) {
 			e.printStackTrace();
-			Corona.get().getLogger().log(Level.SEVERE, e.getMessage());
+			Game.get().log(Level.SEVERE, e.getMessage());
 			return;
 		}
 

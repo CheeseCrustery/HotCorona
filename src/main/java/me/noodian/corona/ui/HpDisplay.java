@@ -1,11 +1,11 @@
 package me.noodian.corona.ui;
 
-import me.noodian.corona.Corona;
+import me.noodian.corona.Game;
 import me.noodian.corona.player.PlayerHandler;
 import org.bukkit.Sound;
 import org.bukkit.attribute.*;
 
-public class HpDisplay extends UiDisplay {
+public class HpDisplay extends Display {
 
 	public HpDisplay(PlayerHandler owner) {
 		this.owner = owner;
@@ -16,17 +16,16 @@ public class HpDisplay extends UiDisplay {
 	public void update(Object... args) {
 
 		// Get input
-		int ticks, initialTicks;
+		double targetHp;
 		if (args.length == 2) {
-			ticks = (int) args[0];
-			initialTicks = (int) args[1];
+			double ticks = (double) args[0];
+			double initialTicks = (double) args[1];
+			targetHp = Math.ceil(20.0d * (double)ticks / initialTicks);
 		} else {
-			ticks = 0;
-			initialTicks = 0;
+			targetHp = 20.0d;
 		}
 
 		// Only update if needed
-		double targetHp = Math.ceil(20.0d * (double)ticks / initialTicks);
 		if (owner.getPlayer().getHealth() != targetHp) {
 
 			// Do not kill player
@@ -38,7 +37,7 @@ public class HpDisplay extends UiDisplay {
 			// Damage player
 			else if (owner.getPlayer().getHealth() > targetHp) {
 				owner.getPlayer().damage(owner.getPlayer().getHealth() - targetHp);
-				Corona.get().world.playSound(owner.getPlayer().getEyeLocation(), Sound.ENTITY_ZOMBIE_HURT, 1.0f, 1.0f);
+				Game.get().getCurrentWorld().playSound(owner.getPlayer().getEyeLocation(), Sound.ENTITY_ZOMBIE_HURT, 1.0f, 1.0f);
 			}
 
 			// Heal player

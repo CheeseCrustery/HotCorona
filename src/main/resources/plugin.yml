@@ -1,4 +1,4 @@
 name: Corona
 version: ${project.version}
-main: me.noodian.corona.Corona
+main: me.noodian.corona.Game
 api-version: 1.13

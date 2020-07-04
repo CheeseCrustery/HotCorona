@@ -1,32 +1,30 @@
-package me.noodian.util;
+package me.noodian.corona;
 
-import me.noodian.corona.Corona;
 import org.bukkit.Server;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 
 import java.util.logging.Level;
 
-public class Text {
+public class TextManager {
+    
     private final Server server;
-    private final FileConfiguration config;
 
-    public Text(Server server, FileConfiguration config) {
+    public TextManager(Server server) {
         this.server = server;
-        this.config = config;
     }
 
-    // Get a string from the config
+    // Get a string from the Game.get().getConfig()
     public String get(String key) {
-        String out = config.getString(key);
+        String out = Game.get().getConfig().getString(key);
         if (out == null) {
-            Corona.get().getLogger().log(Level.WARNING, "Config key \"" + key + "\" not found!");
+            Game.get().log(Level.WARNING, "Config key \"" + key + "\" not found!");
             return key;
         }
         return out;
     }
 
-    // Get a message from the config and send it server wide
+    // Get a message from the Game.get().getConfig() and send it server wide
     public void sendMessage(String key) {
         String out = get("chat." + key);
 
@@ -39,14 +37,14 @@ public class Text {
     // Send a title to the specified player
     public void sendTitle(String key, Player player) {
         String title = get("title." + key);
-        Corona.get().handlers.get(player).showTitle(title);
+        Game.get().getHandlers().get(player).showTitle(title);
     }
 
     // Insert the placeholders and send the title to the specified player
     public void sendTitle(String key, Player player, String[][] placeholders) {
         String title = get("title." + key);
         title = insertPlaceholders(title, placeholders);
-        Corona.get().handlers.get(player).showTitle(title);
+        Game.get().getHandlers().get(player).showTitle(title);
     }
 
     // Insert the Array of [i][Placeholder, Value] into the string

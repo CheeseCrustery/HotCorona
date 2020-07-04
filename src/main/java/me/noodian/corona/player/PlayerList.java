@@ -1,17 +1,18 @@
 package me.noodian.corona.player;
 
-import me.noodian.corona.Corona;
-import me.noodian.corona.ui.*;
+import me.noodian.corona.Game;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
 
 import java.util.*;
 
-public class PlayerList implements Displayable {
+public class PlayerList implements Listener {
 
 	private final HashMap<PlayerState, ArrayList<Player>> states;
 	private final HashMap<Player, PlayerHandler> players;
 	private final ArrayList<PlayerHandler> handlers;
-	private final Set<UiDisplay> subscribers;
 
 	public PlayerList() {
 		states = new HashMap<>();
@@ -20,20 +21,7 @@ public class PlayerList implements Displayable {
 		}
 		players = new HashMap<>();
 		handlers = new ArrayList<>();
-		subscribers = new HashSet<>();
-		new ScoreboardDisplay().subscribeTo(this);
-	}
-
-	@Override
-	// Add a subscriber
-	public void addSubscriber(UiDisplay subscriber) {
-		subscribers.add(subscriber);
-	}
-
-	@Override
-	// Remove a subscriber
-	public void removeSubscriber(UiDisplay subscriber) {
-		subscribers.remove(subscriber);
+		Bukkit.getPluginManager().registerEvents(this, Game.get());
 	}
 
 	// Get all players in the specified states
@@ -53,6 +41,12 @@ public class PlayerList implements Displayable {
 	public PlayerHandler get(Player player) {
 		return players.get(player);
 	}
+	
+	// Remove all player handlers
+	public void remove() {
+		ArrayList<PlayerHandler> oldHandlers = (ArrayList<PlayerHandler>) handlers.clone();
+		for (PlayerHandler handler : oldHandlers) handler.remove();
+	}
 
 	// Add player handler to lists
 	void add(PlayerHandler handler) {
@@ -61,8 +55,6 @@ public class PlayerList implements Displayable {
 		states.get(PlayerState.HEALTHY).add(handler.getPlayer());
 		players.put(handler.getPlayer(), handler);
 		handlers.add(handler);
-
-		updateSubscribers();
 	}
 
 	// Remove player handler from lists
@@ -70,23 +62,12 @@ public class PlayerList implements Displayable {
 		states.get(handler.getState()).remove(handler.getPlayer());
 		players.remove(handler.getPlayer());
 		handlers.remove(handler);
-
-		updateSubscribers();
 	}
 
-	// When player state changes, update list and UI
-	void stateChange(PlayerHandler handler, PlayerState oldState, PlayerState newState) {
-		states.get(oldState).remove(handler.getPlayer());
-		states.get(newState).add(handler.getPlayer());
-
-		updateSubscribers();
-		Corona.get().playerStateChange();
-	}
-
-	// Update the scoreboards data
-	private void updateSubscribers() {
-		Object alive = getPlayers(PlayerState.INFECTED, PlayerState.INCUBATING, PlayerState.HEALTHY);
-		Object dead = getPlayers(PlayerState.DEAD);
-		for (UiDisplay subscriber : subscribers) subscriber.update(alive, dead);
+	@EventHandler
+	// When player state changes, update lists
+	public void onPlayerStateChange(PlayerStateChangeEvent e) {
+		states.get(e.getOldState()).remove(e.getPlayerHandler().getPlayer());
+		states.get(e.getPlayerHandler().getState()).add(e.getPlayerHandler().getPlayer());
 	}
 }

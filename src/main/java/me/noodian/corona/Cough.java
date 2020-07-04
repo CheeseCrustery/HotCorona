@@ -17,8 +17,8 @@ public class Cough extends Ticking {
 	private final Vector baseVelocity;
 	private final PlayerHandler shooter;
 	private final BoundingBox hitBox;
+	private final Vector additionalVelocity;
 	private long lifetime;
-	private Vector velocity;
 
 	public Cough(PlayerHandler shooter, double size, long lifetime) {
 
@@ -39,15 +39,15 @@ public class Cough extends Ticking {
 		);
 
 		// Take base velocity of player
-		baseVelocity = Corona.get().playerVelocity.getVelocity(player).clone();
+		baseVelocity = Game.get().getVelocity().get(player).clone();
 
 		// The cloud moves along the players viewing direction
-		velocity = player.getLocation().getDirection().clone().normalize();
+		additionalVelocity = player.getLocation().getDirection().clone().normalize();
 
 		// Start ticking
 		start();
 	}
-
+	
 	@Override
 	public void tick() {
 
@@ -58,16 +58,16 @@ public class Cough extends Ticking {
 		}
 
 		// Check for collision
-		Collection<Entity> entities = Corona.get().world.getNearbyEntities(hitBox, entity -> entity instanceof Player);
+		Collection<Entity> entities = Game.get().getCurrentWorld().getNearbyEntities(hitBox, entity -> entity instanceof Player);
 		if (entities.size() > 0) onCollision(entities);
 
 		// Move
-		hitBox.shift(baseVelocity.add(velocity.multiply(SPEED)));
+		hitBox.shift(baseVelocity.add(additionalVelocity.multiply(SPEED)));
 
 		// Spawn particles
 		for (int i = 0; i < PARTICLE_DENSITY * hitBox.getVolume(); i++) {
 			Vector vec = randomPointInBox();
-			Corona.get().world.spawnParticle(Particle.SLIME, vec.getX(), vec.getY(), vec.getZ(), 1);
+			Game.get().getCurrentWorld().spawnParticle(Particle.SLIME, vec.getX(), vec.getY(), vec.getZ(), 1);
 		}
 	}
 
@@ -79,7 +79,7 @@ public class Cough extends Ticking {
 			// Get other player
 			if (!(entity instanceof Player)) continue;
 			Player otherPlayer = (Player)entity;
-			PlayerHandler other = Corona.get().handlers.get(otherPlayer);
+			PlayerHandler other = Game.get().getHandlers().get(otherPlayer);
 			if (other == shooter) continue;
 
 			// Infect other player

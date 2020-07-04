@@ -1,6 +1,6 @@
 package me.noodian.corona.time;
 
-import me.noodian.corona.Corona;
+import me.noodian.corona.Game;
 import me.noodian.corona.ui.*;
 
 import java.util.*;
@@ -11,7 +11,7 @@ public class Timer extends Ticking implements Displayable {
 	private final Object[] args;
 	private final int initialTicks; // Ticks at the beginning
 	private int ticks; // Ticks left on timer
-	private Set<UiDisplay> subscribers;
+	private Set<Display> subscribers;
 
 	public Timer(int ticks, TimerCallback callback) {
 		int realTicks = Math.max(ticks, 0);
@@ -39,14 +39,14 @@ public class Timer extends Ticking implements Displayable {
 
 	@Override
 	// Add a subscriber whose graphics should be updated
-	public void addSubscriber(UiDisplay subscriber) {
+	public void onSubscriberAdded(Display subscriber) {
 		subscribers.add(subscriber);
 		updateSubscribers();
 	}
 
 	@Override
 	// Remove a subscriber, no longer update his graphics
-	public void removeSubscriber(UiDisplay subscriber) {
+	public void onSubscriberRemoved(Display subscriber) {
 		subscribers.remove(subscriber);
 	}
 
@@ -56,7 +56,7 @@ public class Timer extends Ticking implements Displayable {
 
 		// Check if timer has finished
 		if (ticks <= 0) {
-			Corona.get().updater.remove(this);
+			remove();
 			if (this.callback != null) callback.finished(args);
 		} else {
 			ticks--;
@@ -75,7 +75,7 @@ public class Timer extends Ticking implements Displayable {
 
 	// Update all subscribers
 	private void updateSubscribers() {
-		for (UiDisplay subscriber : subscribers)
+		for (Display subscriber : subscribers)
 			if (subscriber != null) subscriber.update(ticks, initialTicks);
 	}
 }

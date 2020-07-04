@@ -1,6 +1,6 @@
 package me.noodian.corona.time;
 
-import me.noodian.corona.Corona;
+import me.noodian.corona.Game;
 
 public abstract class Ticking {
 
@@ -13,11 +13,12 @@ public abstract class Ticking {
 
 	// Stop ticking
 	protected final void stop() {
-		Corona.get().updater.remove(this);
+		Game.get().getUpdater().remove(this);
 	}
 
 	// Start ticking
 	protected final void start() {
-		Corona.get().updater.add(this);
+		Game game = Game.get();
+		Game.get().getUpdater().add(this);
 	}
 }

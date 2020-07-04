@@ -21,3 +21,4 @@ config:
   infection-length-drain: 0.2
   timeout: 100
   other-server: "lobby"
+  min-players: 2

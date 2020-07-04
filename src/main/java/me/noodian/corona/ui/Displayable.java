@@ -1,6 +1,6 @@
 package me.noodian.corona.ui;
 
 public interface Displayable {
-	void addSubscriber(UiDisplay subscriber);
-	void removeSubscriber(UiDisplay subscriber);
+	void onSubscriberAdded(Display subscriber);
+	void onSubscriberRemoved(Display subscriber);
 }

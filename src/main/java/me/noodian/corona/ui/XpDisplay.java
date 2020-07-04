@@ -3,7 +3,7 @@ package me.noodian.corona.ui;
 import me.noodian.corona.player.PlayerHandler;
 import org.bukkit.Sound;
 
-public class XpDisplay extends UiDisplay {
+public class XpDisplay extends Display {
 
 	private final Sound tick, finish;
 	private int previousLevel;
