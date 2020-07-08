@@ -7,14 +7,18 @@ import me.noodian.util.NameEncoder;
 import org.bukkit.*;
 import org.bukkit.entity.Snowball;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.potion.*;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 import org.spigotmc.event.player.PlayerSpawnLocationEvent;
 
@@ -23,7 +27,7 @@ import java.util.Arrays;
 
 public class PlayerHandler extends Ticking implements Listener {
 
-	public static final int COUGH_ID = 0, SNEEZE_ID = 1;
+	public static final int COUGH_ID = 0, SNEEZE_ID = 1, MAX_FOOD = 20;
 
 	private final PlayerPacketHandler packetHandler;
 	private final HpDisplay hpBar;
@@ -44,19 +48,17 @@ public class PlayerHandler extends Ticking implements Listener {
 		this.scoreDisplay = new ScoreDisplay(this);
 		
 		// Disable flight
-		player.setFlying(false);
-		player.setAllowFlight(false);
-		
-		// Set self visible
-		ArrayList<Player> otherPlayers = Game.get().getHandlers().getPlayers();
-		for (Player other : otherPlayers)
-			other.showPlayer(Game.get(), player);
-		
-		// Gamemode adventure
-		player.setGameMode(GameMode.ADVENTURE);
+		if (state != PlayerState.DEAD) {
+			player.setFlying(false);
+			player.setAllowFlight(false);
+		} else {
+			player.setAllowFlight(true);
+			player.setFlying(true);
+		}
 		
 		player.teleport(Game.get().getCurrentWorld().getSpawnLocation());
-		Bukkit.getPluginManager().registerEvents(this, Game.get());
+		player.setGameMode(GameMode.ADVENTURE);
+		Game.get().getServer().getPluginManager().registerEvents(this, Game.get());
 		Game.get().getHandlers().add(this);
 		Game.get().getVelocity().add(this.player);
 		clearUi();
@@ -93,12 +95,30 @@ public class PlayerHandler extends Ticking implements Listener {
 		scoreDisplay.remove();
 		Game.get().getVelocity().remove(this.player);
 		Game.get().getHandlers().remove(this);
+		HandlerList.unregisterAll(this);
 		stop();
+		
+		PlayerStateChangeEvent event = new PlayerStateChangeEvent(this, this.state);
+		Game.get().getServer().getPluginManager().callEvent(event);
+	}
+	
+	@EventHandler
+	// Disable player damage
+	public void onDamage(EntityDamageEvent e) {
+		if (e.getEntity() == player && e.getCause() != EntityDamageEvent.DamageCause.CUSTOM)
+			e.setCancelled(true);
+	}
+	
+	@EventHandler
+	// Disable hunger
+	public void onFoodLevelChange(FoodLevelChangeEvent e) {
+		if (e.getEntity() == player)
+			e.setFoodLevel(MAX_FOOD);
 	}
 	
 	@EventHandler
 	// Disable moving items in inventory
-	public void inventoryClick(InventoryClickEvent e) {
+	public void onInventoryClick(InventoryClickEvent e) {
 		if (this.player == e.getWhoClicked())
 			e.setCancelled(true);
 	}
@@ -150,7 +170,60 @@ public class PlayerHandler extends Ticking implements Listener {
 			Game.get().getCurrentWorld().playSound(e.getPlayer().getEyeLocation(), Sound.ENTITY_ENDER_DRAGON_SHOOT, 1.0f, 1.0f);
 		}
 	}
+	
+	@EventHandler
+	// Fix to fucking teleport glitch making everybody invisible
+	public void onPlayerTeleport(PlayerTeleportEvent e) {
+		new BukkitRunnable() {
+			@Override
+			public void run() {
+				for (Player other : Game.get().getHandlers().getPlayers()) {
+					// This is needed bc again, the API is a buggy POS
+					player.hidePlayer(Game.get(), other);
+					other.hidePlayer(Game.get(), player);
+				}
+				updateVisibility();
+			}
+		}.runTaskLater(Game.get(), Game.get().getConfig().getInt("config.timeout", 100));
+	}
 
+	// Set self correctly visible to others, set others correctly visible to self
+	public void updateVisibility() {
+		if (state == PlayerState.DEAD) {
+			
+			// Set self invisible to alive
+			ArrayList<Player> livingPlayers = Game.get().getHandlers().getPlayers(
+					PlayerState.HEALTHY, PlayerState.INCUBATING, PlayerState.INFECTED);
+			for (Player alive : livingPlayers)
+				alive.hidePlayer(Game.get(), player);
+			
+			// Set self visible to dead
+			ArrayList<Player> deadPlayers = Game.get().getHandlers().getPlayers(PlayerState.DEAD);
+			for (Player dead : deadPlayers)
+				dead.showPlayer(Game.get(), player);
+			
+			// See all others
+			for (Player other : Game.get().getHandlers().getPlayers())
+				player.showPlayer(Game.get(), other);
+		} else {
+			
+			// Set self visible to all
+			for (Player other : Game.get().getHandlers().getPlayers())
+				other.showPlayer(Game.get(), player);
+			
+			// See alive
+			ArrayList<Player> livingPlayers = Game.get().getHandlers().getPlayers(
+					PlayerState.HEALTHY, PlayerState.INCUBATING, PlayerState.INFECTED);
+			for (Player alive : livingPlayers)
+				player.showPlayer(Game.get(), alive);
+			
+			// Don't see dead
+			ArrayList<Player> deadPlayers = Game.get().getHandlers().getPlayers(PlayerState.DEAD);
+			for (Player dead : deadPlayers)
+				player.hidePlayer(Game.get(), dead);
+		}
+	}
+	
 	// Make the packet handler show a title
 	public void showTitle(String text) {
 		packetHandler.showTitle(text);
@@ -222,7 +295,7 @@ public class PlayerHandler extends Ticking implements Listener {
 	public boolean setState(PlayerState state) {
 
 		if (this.state == PlayerState.DEAD || this.state == state) return false;
-
+		
 		switch (state) {
 			case HEALTHY:
 
@@ -264,34 +337,29 @@ public class PlayerHandler extends Ticking implements Listener {
 
 				break;
 			case DEAD:
-				// TODO: Infection timer doesn't get cleared
+				
 				clearUi();
-
-				// Set self invisible to alive
-				ArrayList<Player> livingPlayers = Game.get().getHandlers().getPlayers(
-						PlayerState.HEALTHY, PlayerState.INCUBATING, PlayerState.INFECTED);
-				for (Player alive : livingPlayers)
-					alive.hidePlayer(Game.get(), player);
-
-				// Set dead visible to self
-				ArrayList<Player> deadPlayers = Game.get().getHandlers().getPlayers(PlayerState.DEAD);
-				for (Player dead : deadPlayers)
-					player.showPlayer(Game.get(), dead);
-
+				
 				// UI
 				Game.get().getCurrentWorld().playSound(player.getEyeLocation(), Sound.ENTITY_DRAGON_FIREBALL_EXPLODE, 1.0f, 1.0f);
+				ArrayList<Player> livingPlayers = Game.get().getHandlers().getPlayers(
+						PlayerState.HEALTHY, PlayerState.INCUBATING, PlayerState.INFECTED);
 				if (livingPlayers.size() > 2)
 					Game.get().getTextManager().sendTitle("dead", player);
 
+				// Particles
+				Game.get().getCurrentWorld().spawnParticle(Particle.CAMPFIRE_COSY_SMOKE, player.getLocation(), 10);
+				
 				// Fly up
 				player.setAllowFlight(true);
 				player.setFlying(true);
-				player.setVelocity(new Vector(0, 5, 0));
+				player.setVelocity(new Vector(0, 3, 0));
 		}
 		
 		PlayerStateChangeEvent event = new PlayerStateChangeEvent(this, this.state);
 		this.state = state;
-		Bukkit.getServer().getPluginManager().callEvent(event);
+		if (state == PlayerState.DEAD) updateVisibility();
+		Game.get().getServer().getPluginManager().callEvent(event);
 		return true;
 	}
 
@@ -321,7 +389,7 @@ public class PlayerHandler extends Ticking implements Listener {
 		}
 
 		// Clear hunger and Hp
-		player.setFoodLevel(20);
+		player.setFoodLevel(MAX_FOOD);
 		hpBar.update();
 
 		// Clear inventory

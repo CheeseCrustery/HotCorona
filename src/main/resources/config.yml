@@ -1,24 +1,46 @@
-scoreboard:
-  alive: "§o§aAlive:"
-  dead: "§o§7Dead:"
+#==================================================#
+# CONFIGURATION                                    #
+#==================================================#
+
+config:
+  initial-infection-length: 25 # The amount of seconds the first infected player has before he dies
+  infection-length-drain: 0.2 # When a new player gets infected, he has that many seconds before he dies: initial-infection-length - seconds-since-game-started * infection-length-drain
+  timeout: 40 # The amount of ticks the server has to teleport or move players; Try increasing if these don't work correctly
+  other-server: "lobby" # The BungeeCord server where players should be moved after the game has finished
+
+#==================================================#
+# TEXT                                             #
+#==================================================#
+
+# Text may contain...
+# (1) formatting codes (https://minecraft.gamepedia.com/Formatting_codes)
+# (2) placeholders (https://www.spigotmc.org/resources/placeholderapi.6245/)
+# (3) "\n"-newline characters (chat only)
+# %living_players% is a placeholder for a list of all players that are currently alive
+
+scoreboard: # No two entries in the board can be the same!
   title: "§n§lCorona"
-  color:
-    alive: "a"
-    dead: "7"
+  alive:
+    title: "§o§fAlive:"
+    color: "f" # Color of the players that are alive as a formatting code
+    empty: "§o§7None alive"
+  dead:
+    title: "§o§7Dead:"
+    color: "7" # Color of the players that are dead as a formatting code
+    empty: "§o§7None dead"
 chat:
-  starting: "When you get infected, §2cough§r and §2sneeze§r on as many other players as you can to get healthy again!"
+  starting: "§7When you get infected, §2cough §7and §2sneeze §7on as many other players as you can to get healthy again!"
+  survived: "§a================\n§f%hotcorona_living_players% §7survived!\n§a================"
 title:
   start: "It's §4Corona time§r!"
-  one-winner: "§f%name% survived!"
-  multiple-winners: "§fHumanity survived!"
+  end: "§fHumanity survived!"
   infected: "§2You're infected!"
   dead: "§2You died!"
 item:
   cough: "§2Cough"
   sneeze: "§2Sneeze"
-config:
-  initial-infection-length: 25
-  infection-length-drain: 0.2
-  timeout: 100
-  other-server: "lobby"
-  min-players: 2
+
+#==================================================#
+# Created 2020 by Noodian                          #
+# https://www.spigotmc.org/members/noodian.955418/ #
+#==================================================#

@@ -18,7 +18,6 @@ public abstract class Ticking {
 
 	// Start ticking
 	protected final void start() {
-		Game game = Game.get();
 		Game.get().getUpdater().add(this);
 	}
 }

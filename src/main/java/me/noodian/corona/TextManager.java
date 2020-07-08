@@ -1,18 +1,11 @@
 package me.noodian.corona;
 
-import org.bukkit.Server;
-import org.bukkit.configuration.file.FileConfiguration;
+import me.clip.placeholderapi.PlaceholderAPI;
 import org.bukkit.entity.Player;
 
 import java.util.logging.Level;
 
 public class TextManager {
-    
-    private final Server server;
-
-    public TextManager(Server server) {
-        this.server = server;
-    }
 
     // Get a string from the Game.get().getConfig()
     public String get(String key) {
@@ -23,35 +16,35 @@ public class TextManager {
         }
         return out;
     }
-
-    // Get a message from the Game.get().getConfig() and send it server wide
-    public void sendMessage(String key) {
+    
+    // Get message from config, insert placeholders, send it to all players
+    public void sendChatMessage(String key) {
+        for (Player player : Game.get().getHandlers().getPlayers())
+            sendChatMessage(player, key);
+    }
+    
+    // Get message from config, insert placeholders, send it to player
+    public void sendChatMessage(Player player, String key) {
         String out = get("chat." + key);
-
+        out = setPlaceholdersSafely(player, out);
+        
         String[] lines = out.split("\n");
-        for (String line : lines) {
-            server.broadcastMessage(line);
-        }
+        for (String line : lines)
+            player.sendMessage(line);
     }
 
     // Send a title to the specified player
     public void sendTitle(String key, Player player) {
-        String title = get("title." + key);
-        Game.get().getHandlers().get(player).showTitle(title);
+        String out = get("title." + key);
+        out = setPlaceholdersSafely(player, out);
+        Game.get().getHandlers().get(player).showTitle(out);
     }
-
-    // Insert the placeholders and send the title to the specified player
-    public void sendTitle(String key, Player player, String[][] placeholders) {
-        String title = get("title." + key);
-        title = insertPlaceholders(title, placeholders);
-        Game.get().getHandlers().get(player).showTitle(title);
-    }
-
-    // Insert the Array of [i][Placeholder, Value] into the string
-    private String insertPlaceholders(String text, String[][] placeholders) {
-        for (String[] placeholder : placeholders) {
-            text = text.replaceAll("%" + placeholder[0] + "%", placeholder[1]);
-        }
-        return text;
+    
+    // Set placeholders only if the PAPI is enabled
+    private String setPlaceholdersSafely(Player player, String text) {
+        if (Game.PAPI_ENABLED)
+            return PlaceholderAPI.setPlaceholders(player, text);
+        else
+            return text;
     }
 }

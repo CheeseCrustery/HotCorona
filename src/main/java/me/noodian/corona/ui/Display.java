@@ -24,7 +24,7 @@ public abstract class Display {
 	
 	// Remove this display
 	public void remove() {
-		this.update();
+		this.subscribeTo(null);
 		this.owner = null;
 		this.publisher = null;
 	}

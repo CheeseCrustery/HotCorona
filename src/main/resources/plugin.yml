@@ -1,4 +1,5 @@
-name: Corona
+name: HotCorona
 version: ${project.version}
 main: me.noodian.corona.Game
 api-version: 1.13
+softdepend: [PlaceholderAPI]

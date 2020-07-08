@@ -7,14 +7,12 @@ import me.noodian.corona.time.*;
 import me.noodian.corona.time.Timer;
 import me.noodian.corona.ui.*;
 import me.noodian.util.*;
-import org.apache.logging.log4j.core.net.Priority;
 import org.bukkit.*;
 import org.bukkit.FireworkEffect.Builder;
 import org.bukkit.entity.*;
 import org.bukkit.event.*;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.meta.FireworkMeta;
-import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 
@@ -22,8 +20,9 @@ import java.util.*;
 import java.util.logging.Level;
 
 public class Game extends JavaPlugin implements Listener {
-
-	static private Game INSTANCE;
+	
+	public static boolean PAPI_ENABLED = false;
+	private static Game INSTANCE = null;
 	
 	private PlayerVelocityMonitor playerVelocityMonitor;
 	private TextManager textManager;
@@ -33,7 +32,6 @@ public class Game extends JavaPlugin implements Listener {
 	private Scoreboard mainScoreboard;
 	private Timer globalTimer;
 	private GameState state;
-	private Player winner;
 	private long startTime;
 	
 	// Singleton accessor
@@ -44,20 +42,42 @@ public class Game extends JavaPlugin implements Listener {
 	@Override
 	// Initialize
 	public void onEnable() {
+		
+		// Define singleton
 		INSTANCE = this;
 		
-		getServer().getPluginManager().registerEvents(this, Game.get());
-		getServer().getMessenger().registerOutgoingPluginChannel(Game.get(), "BungeeCord");
-		
+		// Register everything
+		if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
+			new Placeholders().register();
+			PAPI_ENABLED = true;
+		} else {
+			log(Level.WARNING, "PlaceholderAPI not found");
+		}
+		getServer().getPluginManager().registerEvents(this, this);
+		getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
 		saveDefaultConfig();
-		textManager = new TextManager(getServer());
+		
+		// Reset session world and switch to it
+		try {
+			WorldLoader.resetWorld("_session", "_rollback");
+		} catch (Exception ex) {
+			log(Level.WARNING, "Error while resetting world: " + ex.getMessage());
+		} finally {
+			log(Level.INFO, "Resetting finished");
+		}
+		world = new WorldCreator("_session").createWorld();
+		if (world == null) {
+			log(Level.SEVERE, "Could not create world!");
+			getServer().getPluginManager().disablePlugin(this);
+		}
+		
+		// Initialize members
+		textManager = new TextManager();
 		state = GameState.PAUSED;
-	}
-	
-	@Override
-	// Destructor
-	public void onDisable() {
-		remove();
+		updater = new Updater();
+		playerVelocityMonitor = new PlayerVelocityMonitor();
+		handlers = new PlayerList();
+		mainScoreboard = new Scoreboard();
 	}
 	
 	@EventHandler
@@ -65,47 +85,50 @@ public class Game extends JavaPlugin implements Listener {
 	public void onPlayerJoin(PlayerJoinEvent e) {
 		PlayerHandler handler;
 		
-		if (state == GameState.PAUSED) {
-			setState(GameState.STARTING);
-		} else {
-			if (state == GameState.STARTING)
-				handler = new PlayerHandler(e.getPlayer(), PlayerState.HEALTHY);
-			else
-				handler = new PlayerHandler(e.getPlayer(), PlayerState.DEAD);
-			handler.setScoreboard(mainScoreboard);
-			if (globalTimer != null)
-				handler.setGlobalTimer(globalTimer);
-		}
+		// Unpause if needed
+		if (state == GameState.PAUSED) setState(GameState.STARTING);
+		
+		// Create player handler
+		if (state == GameState.STARTING)
+			handler = new PlayerHandler(e.getPlayer(), PlayerState.HEALTHY);
+		else
+			handler = new PlayerHandler(e.getPlayer(), PlayerState.DEAD);
+		
+		// Update scoreboard
+		updateScoreboard();
+		handler.setScoreboard(mainScoreboard);
+		
+		// Update timer
+		if (globalTimer != null)
+			handler.setGlobalTimer(globalTimer);
 	}
 	
 	@EventHandler
-	// Remove handler
+	// Remove player
 	public void onPlayerQuit(PlayerQuitEvent e) {
 		handlers.get(e.getPlayer()).remove();
+		updateScoreboard();
+		testForWinner();
 		if (getServer().getOnlinePlayers().size() <= 1)
 			setState(GameState.PAUSED);
 	}
 	
-	@EventHandler(priority=EventPriority.LOW)
+	@EventHandler
 	// When a player's state changes, check if round has ended
 	public void onPlayerStateChange(PlayerStateChangeEvent e) {
 		
-		if (state == GameState.ENDED) return;
+		// Only update when not already finished
+		if (e.isCancelled()) return;
+		testForWinner();
 		updateScoreboard();
-		
-		// If only one player is alive, he wins
-		if (handlers.getPlayers(PlayerState.HEALTHY, PlayerState.INCUBATING, PlayerState.INFECTED).size() == 1) {
-			winner = handlers.getPlayers(PlayerState.HEALTHY, PlayerState.INCUBATING, PlayerState.INFECTED).get(0);
-			setState(GameState.ENDED);
-		}
-		
-		// If no one is infected, all survivers win
-		else if (handlers.getPlayers(PlayerState.INCUBATING, PlayerState.INFECTED).size() == 0) {
-			setState(GameState.ENDED);
-		}
 	}
 	
-	// Returns the text manager object by reference
+	// Get the state
+	public GameState getState() {
+		return state;
+	}
+	
+	// Get a reference to the text manager object
 	public TextManager getTextManager() {
 		return textManager;
 	}
@@ -125,19 +148,9 @@ public class Game extends JavaPlugin implements Listener {
 		return updater;
 	}
 	
-	// Get a reference to the main scoreboard
-	public Scoreboard getMainScoreboard() {
-		return mainScoreboard;
-	}
-	
 	// Get a reference to the velocity monitor
 	public PlayerVelocityMonitor getVelocity() {
 		return playerVelocityMonitor;
-	}
-	
-	// Get the current game state
-	public GameState getState() {
-		return state;
 	}
 	
 	// Get the time in ticks since the game started
@@ -155,52 +168,41 @@ public class Game extends JavaPlugin implements Listener {
 		INSTANCE.getLogger().log(level, message);
 	}
 	
+	// If there's a winner, end the game
+	private void testForWinner() {
+		
+		// If only one player is alive, he wins
+		if (handlers.getPlayers(PlayerState.HEALTHY, PlayerState.INCUBATING, PlayerState.INFECTED).size() == 1) {
+			setState(GameState.ENDED);
+		}
+		
+		// If no one is infected, all survivors win
+		else if (handlers.getPlayers(PlayerState.INCUBATING, PlayerState.INFECTED).size() == 0) {
+			setState(GameState.ENDED);
+		}
+	}
+	
 	// Set the game state and take action accordingly
 	private void setState(GameState state) {
 
 		if (this.state == state) return;
+		this.state = state;
 		
 		switch (state) {
 			case STARTING:
-				/*
-				log(Level.INFO, "Starting new game...");
-				
-				// Reset session world and switch to it
-				try {
-					WorldLoader.resetWorld("_session", "_rollback");
-				} catch (Exception ex) {
-					Game.get().log(Level.WARNING, "Error while resetting world: " + ex.getMessage());
-				} finally {
-					Game.get().log(Level.INFO, "Resetting finished");
-				}*/
-				world = new WorldCreator("_session").createWorld();
-				if (world == null) {
-					Game.get().log(Level.SEVERE, "Could not create world!");
-					Bukkit.getPluginManager().disablePlugin(Game.get());
-				}
-				
-				initialize();
-				
-				// Initialize players
-				for (Player player : Game.get().getServer().getOnlinePlayers()) {
-					PlayerHandler handler = new PlayerHandler(player, PlayerState.HEALTHY);
-					handler.setScoreboard(mainScoreboard);
-					if (globalTimer != null)
-						handler.setGlobalTimer(globalTimer);
-				}
 
 				// Run clocks
-				updater.runTaskTimer(Game.get(), 0, 1);
+				updater.runTaskTimer(this, 0, 1);
 
-				// Send chat message and start countdown
-				Game.get().getTextManager().sendMessage("starting");
+				// Send chat message
+				textManager.sendChatMessage("starting");
+				
+				// Start countdown
 				TimerCallback startCallback = args -> setState(GameState.INGAME);
 				globalTimer = new Timer(10*20, startCallback);
 				for (Player player : handlers.getPlayers()) {
 					handlers.get(player).setGlobalTimer(globalTimer);
 				}
-				
-				updateScoreboard();
 
 				break;
 			case INGAME:
@@ -209,14 +211,14 @@ public class Game extends JavaPlugin implements Listener {
 				startTime = new Date().getTime();
 
 				// Infect random player
-				Collection<? extends Player> players = Game.get().getServer().getOnlinePlayers();
+				Collection<Player> players = handlers.getPlayers();
 				int infected = new Random().nextInt(players.size());
 				int i = 0;
 				for (Player player : players) {
 					if (i == infected)
 						this.handlers.get(player).getInfectedBy(null);
 					else
-						Game.get().getTextManager().sendTitle("start", player);
+						textManager.sendTitle("start", player);
 					i++;
 				}
 
@@ -224,11 +226,13 @@ public class Game extends JavaPlugin implements Listener {
 			case ENDED:
 
 				// After game has ended, either reload or leave the server
-				TimerCallback endCallback = args -> {
-					setState(GameState.PAUSED);
-				};
+				TimerCallback endCallback = args -> setState(GameState.PAUSED);
 				globalTimer = new Timer(10*20, endCallback);
-				for (Player player : Game.get().getServer().getOnlinePlayers()) {
+				
+				// Send winner message
+				textManager.sendChatMessage("survived");
+				
+				for (Player player : handlers.getPlayers()) {
 
 					// Kill everyone
 					this.handlers.get(player).setState(PlayerState.DEAD);
@@ -246,14 +250,8 @@ public class Game extends JavaPlugin implements Listener {
 					firework.setFireworkMeta(fireworkMeta);
 
 					// Send winner title
-					if (winner != null)
-						Game.get().getTextManager().sendTitle(
-								"one-winner",
-								player,
-								new String[][]{{"name", winner.getDisplayName()}});
-					else
-						Game.get().getTextManager().sendTitle("multiple-winners", player);
-
+					textManager.sendTitle("end", player);
+					
 					// Set end timer
 					handlers.get(player).setGlobalTimer(globalTimer);
 				}
@@ -261,37 +259,34 @@ public class Game extends JavaPlugin implements Listener {
 				break;
 			case PAUSED:
 				
-				remove();
-				log(Level.INFO,"Game paused");
+				// Cancel updates
+				updater.cancel();
 				
-				// Either reload or leave server
-				int onlinePlayers = Game.get().getServer().getOnlinePlayers().size();
-				int minPlayers = Game.get().getConfig().getInt("config.min-players", 0);
-				if (onlinePlayers >= minPlayers && onlinePlayers > 0)
-					setState(GameState.STARTING);
-				else
-					stop();
+				// Move players
+				log(Level.INFO, "Not enough players to restart. Trying to move to other server...");
+				String otherServer = getConfig().getString("config.other-server");
+				if (otherServer != null) {
+					ByteArrayDataOutput out = ByteStreams.newDataOutput();
+					out.writeUTF("Connect");
+					out.writeUTF(getConfig().getString("config.other-server"));
+					for (Player player : getServer().getOnlinePlayers())
+						player.sendPluginMessage(this, "BungeeCord", out.toByteArray());
+				} else {
+					log(Level.WARNING, "Name of other server not found! Please specify config.other-server in the configuration file.");
+				}
+				
+				// If moving failed, restart
+				new BukkitRunnable() {
+					@Override
+					public void run() {
+						if (getServer().getOnlinePlayers().size() > 0) {
+							log(Level.WARNING, "Moving players failed!");
+						}
+						log(Level.INFO, "Restarting server...");
+						getServer().dispatchCommand(Bukkit.getConsoleSender(), "restart");
+					}
+				}.runTaskLater(this, getConfig().getInt("config.timeout", 100));
 		}
-		
-		this.state = state;
-	}
-	
-	// Initialize members for a round
-	private void initialize() {
-		updater = new Updater();
-		playerVelocityMonitor = new PlayerVelocityMonitor();
-		handlers = new PlayerList();
-		winner = null;
-		mainScoreboard = new Scoreboard();
-	}
-	
-	// Remove everything safely
-	private void remove() {
-		handlers.remove();
-		if (globalTimer != null) globalTimer.remove();
-		playerVelocityMonitor.remove();
-		HandlerList.unregisterAll((Plugin) Game.get());
-		Bukkit.getPluginManager().registerEvents(Game.get(), Game.get());
 	}
 
 	// Update the scoreboards data
@@ -299,33 +294,5 @@ public class Game extends JavaPlugin implements Listener {
 		ArrayList<Player> alive = handlers.getPlayers(PlayerState.INFECTED, PlayerState.INCUBATING, PlayerState.HEALTHY);
 		ArrayList<Player> dead = handlers.getPlayers(PlayerState.DEAD);
 		mainScoreboard.update(alive, dead);
-	}
-	
-	// Move all players off the server
-	private void stop() {
-		
-		// Move players
-		log(Level.INFO, "Not enough players to restart. Trying to move to other server...");
-		String otherServer = getConfig().getString("config.other-server");
-		if (otherServer != null) {
-			ByteArrayDataOutput out = ByteStreams.newDataOutput();
-			out.writeUTF("Connect");
-			out.writeUTF(getConfig().getString("config.other-server"));
-			for (Player player : getServer().getOnlinePlayers())
-				player.sendPluginMessage(Game.get(), "BungeeCord", out.toByteArray());
-		} else {
-			log(Level.WARNING, "Name of other server not found! Please specify config.other-server in the configuration file.");
-		}
-		
-		// If moving failed, restart
-		new BukkitRunnable() {
-			@Override
-			public void run() {
-				if (getServer().getOnlinePlayers().size() > 0) {
-					log(Level.WARNING, "Moving players failed!");
-					if (getServer().getOnlinePlayers().size() > 0) setState(GameState.STARTING);
-				}
-			}
-		}.runTaskLater(Game.get(), getConfig().getInt("config.timeout", 100));
 	}
 }

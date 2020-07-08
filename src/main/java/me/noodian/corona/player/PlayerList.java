@@ -1,9 +1,11 @@
 package me.noodian.corona.player;
 
 import me.noodian.corona.Game;
-import org.bukkit.Bukkit;
+import me.noodian.corona.GameState;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 
 import java.util.*;
@@ -21,7 +23,25 @@ public class PlayerList implements Listener {
 		}
 		players = new HashMap<>();
 		handlers = new ArrayList<>();
-		Bukkit.getPluginManager().registerEvents(this, Game.get());
+		Game.get().getServer().getPluginManager().registerEvents(this, Game.get());
+	}
+	
+	@EventHandler(priority=EventPriority.LOW) // LOW means it gets called first
+	// When player state changes, update lists
+	public void onPlayerStateChange(PlayerStateChangeEvent e) {
+		if (Game.get().getState() == GameState.INGAME) {
+			if (states.get(e.getOldState()) != null) {
+				states.get(e.getOldState()).remove(e.getPlayerHandler().getPlayer());
+				states.get(e.getPlayerHandler().getState()).add(e.getPlayerHandler().getPlayer());
+			}
+		} else {
+			e.setCancelled(true);
+		}
+	}
+	
+	// Safely remove
+	public void remove() {
+		HandlerList.unregisterAll(this);
 	}
 
 	// Get all players in the specified states
@@ -42,12 +62,6 @@ public class PlayerList implements Listener {
 		return players.get(player);
 	}
 	
-	// Remove all player handlers
-	public void remove() {
-		ArrayList<PlayerHandler> oldHandlers = (ArrayList<PlayerHandler>) handlers.clone();
-		for (PlayerHandler handler : oldHandlers) handler.remove();
-	}
-
 	// Add player handler to lists
 	void add(PlayerHandler handler) {
 		if (handlers.contains(handler)) return;
@@ -62,12 +76,5 @@ public class PlayerList implements Listener {
 		states.get(handler.getState()).remove(handler.getPlayer());
 		players.remove(handler.getPlayer());
 		handlers.remove(handler);
-	}
-
-	@EventHandler
-	// When player state changes, update lists
-	public void onPlayerStateChange(PlayerStateChangeEvent e) {
-		states.get(e.getOldState()).remove(e.getPlayerHandler().getPlayer());
-		states.get(e.getPlayerHandler().getState()).add(e.getPlayerHandler().getPlayer());
 	}
 }

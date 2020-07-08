@@ -1,7 +1,6 @@
 package me.noodian.util;
 
 import org.bukkit.Bukkit;
-import org.bukkit.World;
 import org.bukkit.craftbukkit.libs.org.apache.commons.io.FileUtils;
 
 import java.io.IOException;
@@ -13,7 +12,6 @@ public class WorldLoader {
 	public static void resetWorld(String world, String rollback) throws IOException, IllegalAccessException {
 
 		// Unload session
-		World asdf = Bukkit.getServer().getWorld(world);
 		if (Bukkit.getServer().getWorld(world) == null || Bukkit.getServer().unloadWorld(world, false)) {
 
 			// Empty world folder

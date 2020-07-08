@@ -24,22 +24,20 @@ public class Scoreboard implements Displayable {
 		board = manager.getNewScoreboard();
 
 		objective = board.registerNewObjective("living", "dummy", Game.get().getTextManager().get("scoreboard.title"));
-
+		objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+		
 		alive = board.registerNewTeam("alive");
-		ChatColor aliveColor = ChatColor.getByChar(Game.get().getTextManager().get("scoreboard.color.alive"));
+		ChatColor aliveColor = ChatColor.getByChar(Game.get().getTextManager().get("scoreboard.alive.color"));
 		if (aliveColor == null) aliveColor = ChatColor.GREEN;
 		alive.setColor(aliveColor);
 		alive.setOption(Team.Option.COLLISION_RULE, Team.OptionStatus.NEVER);
 
 		dead = board.registerNewTeam("dead");
-		ChatColor deadColor = ChatColor.getByChar(Game.get().getTextManager().get("scoreboard.color.dead"));
+		ChatColor deadColor = ChatColor.getByChar(Game.get().getTextManager().get("scoreboard.dead.color"));
 		if (deadColor == null) deadColor = ChatColor.GRAY;
 		dead.setColor(deadColor);
 		dead.setOption(Team.Option.COLLISION_RULE, Team.OptionStatus.NEVER);
 		dead.setCanSeeFriendlyInvisibles(true);
-
-		for (Player player: Bukkit.getOnlinePlayers())
-			alive.addEntry(player.getDisplayName());
 	}
 
 	@Override
@@ -55,7 +53,7 @@ public class Scoreboard implements Displayable {
 
 		// Check for bad initialization
 		if (objective == null || alive == null || dead == null) return;
-
+		
 		// Update teams
 		updateTeam(alive, newAlive);
 		updateTeam(dead, newDead);
@@ -64,16 +62,18 @@ public class Scoreboard implements Displayable {
 		int counter = 0;
 		for (Player player : newDead)
 			counter = countUp(counter, player.getDisplayName());
-		if (newDead.size() == 0) counter = countUp(counter, "None");
-
-		counter = countUp(counter, Game.get().getTextManager().get("scoreboard.dead"));
+		if (newDead.size() == 0) counter = countUp(counter, Game.get().getTextManager().get("scoreboard.dead.empty"));
+		else board.resetScores(Game.get().getTextManager().get("scoreboard.dead.empty"));
+		
+		counter = countUp(counter, Game.get().getTextManager().get("scoreboard.dead.title"));
 		counter = countUp(counter, "");
 
 		for (Player player : newAlive)
 			counter = countUp(counter, player.getDisplayName());
-		if (newAlive.size() == 0) counter = countUp(counter, "None");
-
-		countUp(counter, Game.get().getTextManager().get("scoreboard.alive"));
+		if (newAlive.size() == 0) counter = countUp(counter, Game.get().getTextManager().get("scoreboard.alive.empty"));
+		else board.resetScores(Game.get().getTextManager().get("scoreboard.alive.empty"));
+		
+		countUp(counter, Game.get().getTextManager().get("scoreboard.alive.title"));
 	}
 
 	// Set the entries score to the counter and increase the counter

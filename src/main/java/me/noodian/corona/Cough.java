@@ -2,7 +2,6 @@ package me.noodian.corona;
 
 import me.noodian.corona.player.*;
 import me.noodian.corona.time.Ticking;
-import org.bukkit.Bukkit;
 import org.bukkit.Particle;
 import org.bukkit.entity.*;
 import org.bukkit.util.*;
@@ -86,8 +85,6 @@ public class Cough extends Ticking {
 			if (other.getState() != PlayerState.DEAD) {
 				other.getInfectedBy(shooter);
 			}
-
-			Bukkit.getServer().broadcastMessage("COLLISION WITH " + otherPlayer.getName());
 		}
 	}
 

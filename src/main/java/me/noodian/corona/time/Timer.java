@@ -1,16 +1,15 @@
 package me.noodian.corona.time;
 
-import me.noodian.corona.Game;
 import me.noodian.corona.ui.*;
 
 import java.util.*;
 
 public class Timer extends Ticking implements Displayable {
 
-	private final TimerCallback callback;
 	private final Object[] args;
 	private final int initialTicks; // Ticks at the beginning
 	private int ticks; // Ticks left on timer
+	private TimerCallback callback;
 	private Set<Display> subscribers;
 
 	public Timer(int ticks, TimerCallback callback) {
@@ -56,8 +55,8 @@ public class Timer extends Ticking implements Displayable {
 
 		// Check if timer has finished
 		if (ticks <= 0) {
-			remove();
 			if (this.callback != null) callback.finished(args);
+			remove();
 		} else {
 			ticks--;
 		}
@@ -69,7 +68,7 @@ public class Timer extends Ticking implements Displayable {
 	// Delete timer
 	public void remove() {
 		this.subscribers = new HashSet<>();
-		this.ticks = 0;
+		this.callback = null;
 		stop();
 	}
 

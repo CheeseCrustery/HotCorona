@@ -7,6 +7,7 @@ import org.bukkit.Particle;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Snowball;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.ProjectileHitEvent;
 
@@ -22,6 +23,8 @@ public class Sneeze extends Ticking implements Listener {
 		this.snowball = snowball;
 		this.particleAmount = MIN_PARTICLES;
 		this.particleDelta = 1;
+		
+		Game.get().getServer().getPluginManager().registerEvents(this, Game.get());
 		start();
 	}
 
@@ -47,6 +50,7 @@ public class Sneeze extends Ticking implements Listener {
 	@Override
 	// Remove self
 	public void remove() {
+		HandlerList.unregisterAll(this);
 		stop();
 	}
 

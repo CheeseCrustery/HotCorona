@@ -18,8 +18,8 @@ public class HpDisplay extends Display {
 		// Get input
 		double targetHp;
 		if (args.length == 2) {
-			double ticks = (double) args[0];
-			double initialTicks = (double) args[1];
+			int ticks = (int) args[0];
+			int initialTicks = (int) args[1];
 			targetHp = Math.ceil(20.0d * (double)ticks / initialTicks);
 		} else {
 			targetHp = 20.0d;

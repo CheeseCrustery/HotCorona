@@ -2,7 +2,6 @@ package me.noodian.corona.player;
 
 import io.netty.channel.*;
 import me.noodian.corona.Game;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.*;
 
 import java.lang.reflect.*;
@@ -66,7 +65,7 @@ class PlayerPacketHandler extends ChannelDuplexHandler {
 				Field f_uuid = PacketPlayOutSpawnEntity.getDeclaredField("b");
 				f_uuid.setAccessible(true);
 				UUID uuid = (UUID) f_uuid.get(packet);
-				Entity entity = Bukkit.getServer().getEntity(uuid);
+				Entity entity = Game.get().getServer().getEntity(uuid);
 
 				// Only intercept snowball entities
 				if (entity != null && entity.getType() == EntityType.SNOWBALL) return;
@@ -129,7 +128,7 @@ class PlayerPacketHandler extends ChannelDuplexHandler {
 
 	// Get a class via reflection
 	private Class<?> getClass(String name, String prefix) throws ClassNotFoundException {
-		String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
+		String version = Game.get().getServer().getClass().getPackage().getName().split("\\.")[3];
 		return Class.forName(prefix + version + "." + name);
 	}
 }
