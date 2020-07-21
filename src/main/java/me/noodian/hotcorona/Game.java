@@ -73,7 +73,7 @@ public class Game extends JavaPlugin implements Listener {
 		
 		// Initialize members
 		textManager = new TextManager();
-		state = GameState.PAUSED;
+		state = GameState.SLEEPING;
 		updater = new Updater();
 		playerVelocityMonitor = new PlayerVelocityMonitor();
 		handlers = new PlayerList();
@@ -85,8 +85,14 @@ public class Game extends JavaPlugin implements Listener {
 	public void onPlayerJoin(PlayerJoinEvent e) {
 		PlayerHandler handler;
 		
+		// Kick if restarting
+		if (state == GameState.STOPPED) {
+			e.getPlayer().kickPlayer("Server is restarting");
+			return;
+		}
+		
 		// Unpause if needed
-		if (state == GameState.PAUSED) setState(GameState.STARTING);
+		if (state == GameState.SLEEPING) setState(GameState.STARTING);
 		
 		// Create player handler
 		if (state == GameState.STARTING)
@@ -110,7 +116,7 @@ public class Game extends JavaPlugin implements Listener {
 		updateScoreboard();
 		testForWinner();
 		if (getServer().getOnlinePlayers().size() <= 1)
-			setState(GameState.PAUSED);
+			setState(GameState.STOPPED);
 	}
 	
 	@EventHandler
@@ -226,8 +232,9 @@ public class Game extends JavaPlugin implements Listener {
 			case ENDED:
 
 				// After game has ended, either reload or leave the server
-				TimerCallback endCallback = args -> setState(GameState.PAUSED);
-				globalTimer = new Timer(10*20, endCallback);
+				TimerCallback endCallback = args -> setState(GameState.STOPPED);
+				int endTime = getConfig().getInt("gameplay.endscreen-duration", 15);
+				globalTimer = new Timer(endTime*20, endCallback);
 				
 				// Send winner message
 				textManager.sendChatMessage("survived");
@@ -257,22 +264,22 @@ public class Game extends JavaPlugin implements Listener {
 				}
 				
 				break;
-			case PAUSED:
+			case STOPPED:
 				
 				// Cancel updates
 				updater.cancel();
 				
 				// Move players
 				log(Level.INFO, "Not enough players to restart. Trying to move to other server...");
-				String otherServer = getConfig().getString("config.other-server");
+				String otherServer = getConfig().getString("gameplay.other-server");
 				if (otherServer != null) {
 					ByteArrayDataOutput out = ByteStreams.newDataOutput();
 					out.writeUTF("Connect");
-					out.writeUTF(getConfig().getString("config.other-server"));
+					out.writeUTF(getConfig().getString("gameplay.other-server"));
 					for (Player player : getServer().getOnlinePlayers())
 						player.sendPluginMessage(this, "BungeeCord", out.toByteArray());
 				} else {
-					log(Level.WARNING, "Name of other server not found! Please specify config.other-server in the configuration file.");
+					log(Level.WARNING, "Name of other server not found! Please specify gameplay.other-server in the configuration file.");
 				}
 				
 				// If moving failed, restart
@@ -285,7 +292,7 @@ public class Game extends JavaPlugin implements Listener {
 						log(Level.INFO, "Restarting server...");
 						getServer().dispatchCommand(Bukkit.getConsoleSender(), "restart");
 					}
-				}.runTaskLater(this, getConfig().getInt("config.timeout", 100));
+				}.runTaskLater(this, getConfig().getInt("gameplay.timeout", 100));
 		}
 	}
 

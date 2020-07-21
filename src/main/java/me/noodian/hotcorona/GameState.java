@@ -1,8 +1,9 @@
 package me.noodian.corona;
 
 public enum GameState {
-	PAUSED,
+	SLEEPING,
 	STARTING,
 	INGAME,
-	ENDED
+	ENDED,
+	STOPPED
 }

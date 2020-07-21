@@ -20,6 +20,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
+import org.graalvm.compiler.replacements.nodes.ArrayCompareToNode;
 import org.spigotmc.event.player.PlayerSpawnLocationEvent;
 
 import java.util.ArrayList;
@@ -149,7 +150,7 @@ public class PlayerHandler extends Ticking implements Listener {
 	public void onPlayerInteract(PlayerInteractEvent e) {
 		
 		if (e.getPlayer() != player
-				|| e.getAction() != Action.RIGHT_CLICK_AIR
+				|| e.getAction() == Action.PHYSICAL
 				|| e.getItem() == null
 				|| e.getItem().getItemMeta() == null
 		) return;
@@ -184,7 +185,7 @@ public class PlayerHandler extends Ticking implements Listener {
 				}
 				updateVisibility();
 			}
-		}.runTaskLater(Game.get(), Game.get().getConfig().getInt("config.timeout", 100));
+		}.runTaskLater(Game.get(), Game.get().getConfig().getInt("gameplay.timeout", 100));
 	}
 
 	// Set self correctly visible to others, set others correctly visible to self
@@ -247,6 +248,7 @@ public class PlayerHandler extends Ticking implements Listener {
 			};
 			
 			// Start timer
+			int infectionTime = Game.get().getConfig().getInt("gameplay.incubate-duration", 3);
 			this.infectionTimer = new Timer(5*20, infectionCallback, new Object[]{other});
 		}
 	}
@@ -329,8 +331,8 @@ public class PlayerHandler extends Ticking implements Listener {
 				// Run countdown to death
 				TimerCallback deathCallback = args -> setState(PlayerState.DEAD);
 				// infectionlength(gameduration) = initiallength - gameduration * drain
-				int initiallength = Game.get().getConfig().getInt("config.initial-infection-length", 25);
-				double drain = Game.get().getConfig().getDouble("config.infection-length-drain", 0.2);
+				int initiallength = Game.get().getConfig().getInt("gameplay.initial-infection-length", 25);
+				double drain = Game.get().getConfig().getDouble("gameplay.infection-length-drain", 0.2);
 				int ticks = (int) (initiallength * 20 - Game.get().getGameDuration() * drain);
 				deathTimer = new Timer(ticks, deathCallback);
 				hpBar.subscribeTo(deathTimer);
@@ -349,6 +351,7 @@ public class PlayerHandler extends Ticking implements Listener {
 
 				// Particles
 				Game.get().getCurrentWorld().spawnParticle(Particle.CAMPFIRE_COSY_SMOKE, player.getLocation(), 10);
+				Game.get().getCurrentWorld().spawnParticle(Particle.EXPLOSION_LARGE, player.getLocation(), 10);
 				
 				// Fly up
 				player.setAllowFlight(true);
